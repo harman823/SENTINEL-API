@@ -1,0 +1,61 @@
+name: AutoAPI Intelligence - API Testing
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  api-test:
+    runs-on: ubuntu-latest
+    name: Run API Intelligence Pipeline
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Lint OpenAPI Spec
+        run: |
+          python -m cli.main lint openapi.yaml
+
+      - name: Run full pipeline (dry-run)
+        run: |
+          python -m cli.main run-graph openapi.yaml --approve --ci --output autoapi-report.json
+
+      - name: Generate JUnit report
+        if: always()
+        run: |
+          python -c "
+          from backend.app.services.cicd import CICDFormatter
+          import json
+          with open('autoapi-report.json') as f:
+              report = json.load(f)
+          junit = CICDFormatter.to_junit_xml(report)
+          with open('junit-results.xml', 'w') as f:
+              f.write(junit)
+          "
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: autoapi-results
+          path: |
+            autoapi-report.json
+            junit-results.xml
+
+      - name: Publish JUnit results
+        if: always()
+        uses: mikepenz/action-junit-report@v4
+        with:
+          report_paths: junit-results.xml
+          check_name: AutoAPI Test Results
