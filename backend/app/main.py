@@ -234,20 +234,31 @@ async def generate_mocks(request: MockRequest):
 @app.get("/")
 async def serve_landing():
     """Landing page — explains what AutoAPI does."""
-    return FileResponse(FRONTEND_DIR / "landing.html")
+    landing_path = FRONTEND_DIR / "landing.html"
+    if landing_path.exists():
+        return FileResponse(landing_path)
+    return {"message": "AutoAPI Backend is running."}
 
 
 @app.get("/landing")
 async def serve_landing_alt():
     """Landing page (alternate route)."""
-    return FileResponse(FRONTEND_DIR / "landing.html")
+    landing_path = FRONTEND_DIR / "landing.html"
+    if landing_path.exists():
+        return FileResponse(landing_path)
+    return {"message": "AutoAPI Backend is running."}
 
 
 @app.get("/dashboard")
 async def serve_dashboard():
     """Main dashboard for running pipelines."""
-    return FileResponse(FRONTEND_DIR / "index.html")
+    dashboard_path = FRONTEND_DIR / "index.html"
+    if dashboard_path.exists():
+        return FileResponse(dashboard_path)
+    return {"message": "Dashboard not found in this environment."}
 
 
-app.mount("/", StaticFiles(directory=str(FRONTEND_DIR)), name="frontend")
+if FRONTEND_DIR.exists():
+    app.mount("/", StaticFiles(directory=str(FRONTEND_DIR)), name="frontend")
+
 
