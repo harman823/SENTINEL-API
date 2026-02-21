@@ -54,27 +54,41 @@ pip install -r requirements.txt
 
 ## Running the Project
 
-### 1. Web Dashboard
+The project is split into several different components that can be run independently based on your needs.
 
-Start the FastAPI server which serves both the backend API and the frontend UI:
+### 1. Web Dashboard (Next.js Frontend)
+
+The modern frontend React/Next.js dashboard provides a rich user interface to interact with the pipeline.
 
 ```bash
+# Navigate to the frontend UI
+cd frontend/dash
+
+# Install node dependencies
+npm install
+
+# Start the development server
+npm run dev
+```
+
+Then open your browser to `http://localhost:3000`.
+
+### 2. Backend API (FastAPI)
+
+The core pipeline runs on a FastAPI backend. This serves both the API endpoints and processes the LangGraph intelligence pipeline.
+
+```bash
+# Ensure your virtual environment is active and dependencies are installed
+pip install -r requirements.txt
+
+# Start the FastAPI server
 uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-Then open your browser:
-
 | URL | Description |
 |-----|-------------|
-| `http://localhost:8000` | Frontend Dashboard |
 | `http://localhost:8000/docs` | Swagger UI (interactive API docs) |
 | `http://localhost:8000/health` | Health check endpoint |
-
-**Upload a spec via the UI:**
-1. Open `http://localhost:8000`
-2. Click the upload area and select a YAML/JSON OpenAPI spec file
-3. Click **Run Pipeline** to execute the full analysis
-4. View risk scores, policy results, test outcomes, and the final report
 
 **Upload a spec via cURL:**
 
@@ -93,7 +107,7 @@ curl -X POST http://localhost:8000/api/v1/validate \
 
 ---
 
-### 2. CLI
+### 3. CLI
 
 The CLI provides the same pipeline functionality from the terminal with rich, colorful output.
 
@@ -148,6 +162,28 @@ python -m cli.main run-graph examples/full_test_api.yaml --approve --verbose -o 
 python -m cli.main --help
 python -m cli.main run-graph --help
 python -m cli.main validate --help
+```
+
+---
+
+### 4. Running Tests
+
+The repository contains a suite of automated unit tests covering the backend services and pipeline logic.
+
+```bash
+# Run all tests
+pytest tests/
+```
+
+---
+
+### 5. Running End-to-End Pipeline Test
+
+An independent test script `test_pipeline_e2e.py` provides a quick E2E pipeline simulation against an inline, rich OpenAPI spec (to test LangGraph builder end-to-end without a live API or file inputs).
+
+```bash
+# Run the End-to-End script directly
+python test_pipeline_e2e.py
 ```
 
 ---
