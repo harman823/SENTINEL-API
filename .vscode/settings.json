@@ -1,0 +1,11 @@
+{
+    "python.defaultInterpreterPath": "C:/Users/harma/AppData/Local/Programs/Python/Python313/python.exe",
+    "python.analysis.extraPaths": [
+        "${workspaceFolder}",
+        "C:/Users/harma/AppData/Local/Programs/Python/Python313/Lib/site-packages"
+    ],
+    "python.analysis.typeCheckingMode": "basic",
+    "python.analysis.autoImportCompletions": true,
+    "python.languageServer": "Pylance",
+    "pyre.enable": false
+}

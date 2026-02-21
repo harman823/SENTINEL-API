@@ -1,0 +1,17 @@
+{
+    "pythonVersion": "3.13",
+    "pythonInterpreter": "C:/Users/harma/AppData/Local/Programs/Python/Python313/python.exe",
+    "include": [
+        "backend",
+        "cli",
+        "tests"
+    ],
+    "extraPaths": [
+        ".",
+        "C:/Users/harma/AppData/Local/Programs/Python/Python313/Lib/site-packages"
+    ],
+    "typeCheckingMode": "basic",
+    "reportMissingImports": "warning",
+    "reportMissingModuleSource": "warning",
+    "useLibraryCodeForTypes": true
+}

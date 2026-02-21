@@ -1,0 +1,23 @@
+{
+    "source_directories": [
+        {
+            "import_root": ".",
+            "source": "backend"
+        },
+        {
+            "import_root": ".",
+            "source": "cli"
+        },
+        {
+            "import_root": ".",
+            "source": "tests"
+        }
+    ],
+    "search_path": [
+        "C:/Users/harma/AppData/Local/Programs/Python/Python313/Lib/site-packages",
+        "C:/Users/harma/AppData/Local/Programs/Python/Python313/Lib"
+    ],
+    "site_package_search_strategy": "all",
+    "python_version": "3.13",
+    "python_path": "C:/Users/harma/AppData/Local/Programs/Python/Python313/python.exe"
+}

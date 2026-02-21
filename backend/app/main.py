@@ -10,7 +10,7 @@ import json
 import tempfile
 import os
 
-FRONTEND_DIR = Path(__file__).resolve().parent.parent.parent / "frontend"
+import os
 
 app = FastAPI(
     title="AutoAPI Intelligence",
@@ -228,37 +228,5 @@ async def generate_mocks(request: MockRequest):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-
-# ── Frontend (static files) ──
-@app.get("/")
-async def serve_landing():
-    """Landing page — explains what AutoAPI does."""
-    landing_path = FRONTEND_DIR / "landing.html"
-    if landing_path.exists():
-        return FileResponse(landing_path)
-    return {"message": "AutoAPI Backend is running."}
-
-
-@app.get("/landing")
-async def serve_landing_alt():
-    """Landing page (alternate route)."""
-    landing_path = FRONTEND_DIR / "landing.html"
-    if landing_path.exists():
-        return FileResponse(landing_path)
-    return {"message": "AutoAPI Backend is running."}
-
-
-@app.get("/dashboard")
-async def serve_dashboard():
-    """Main dashboard for running pipelines."""
-    dashboard_path = FRONTEND_DIR / "index.html"
-    if dashboard_path.exists():
-        return FileResponse(dashboard_path)
-    return {"message": "Dashboard not found in this environment."}
-
-
-if FRONTEND_DIR.exists():
-    app.mount("/", StaticFiles(directory=str(FRONTEND_DIR)), name="frontend")
 
 
