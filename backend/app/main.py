@@ -1,3 +1,5 @@
+import os
+import datetime
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -8,9 +10,6 @@ from pathlib import Path
 import yaml
 import json
 import tempfile
-import os
-
-import os
 
 app = FastAPI(
     title="AutoAPI Intelligence",
@@ -70,6 +69,7 @@ async def health():
     return {"status": "ok", "service": "autoapi-intelligence"}
 
 
+
 @app.post("/api/v1/run", response_model=PipelineResponse)
 async def run_pipeline(request: RunPipelineRequest):
     """Run the full LangGraph pipeline on a provided OpenAPI spec."""
@@ -93,6 +93,7 @@ async def run_pipeline(request: RunPipelineRequest):
             "approval_required": False,
             "approval_status": request.approve,
             "environment": request.environment,
+            "live": request.live,
             "errors": [],
         }
 
@@ -138,6 +139,7 @@ async def run_pipeline(request: RunPipelineRequest):
 async def upload_spec(
     file: UploadFile = File(...),
     approve: bool = False,
+    live: bool = False
 ):
     """Upload an OpenAPI YAML/JSON file and run the pipeline."""
     try:
@@ -151,13 +153,30 @@ async def upload_spec(
         else:
             raise HTTPException(status_code=400, detail="File must be .yaml, .yml, or .json")
 
-        request = RunPipelineRequest(spec_raw=spec_raw, approve=approve)
+        request = RunPipelineRequest(spec_raw=spec_raw, approve=approve, live=live)
         return await run_pipeline(request)
 
     except yaml.YAMLError as e:
         raise HTTPException(status_code=400, detail=f"Invalid YAML: {str(e)}")
     except json.JSONDecodeError as e:
         raise HTTPException(status_code=400, detail=f"Invalid JSON: {str(e)}")
+
+
+class GitHubRunRequest(BaseModel):
+    url: str
+    approve: bool = False
+    live: bool = False
+
+@app.post("/api/v1/github-run", response_model=PipelineResponse)
+async def github_run(request: GitHubRunRequest):
+    """Fetch an OpenAPI spec from a GitHub URL and run the pipeline."""
+    from backend.app.services.openapi_loader import OpenAPILoader
+    try:
+        spec_raw = OpenAPILoader.load_spec(request.url)
+        run_request = RunPipelineRequest(spec_raw=spec_raw, approve=request.approve, live=request.live)
+        return await run_pipeline(run_request)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.post("/api/v1/validate")

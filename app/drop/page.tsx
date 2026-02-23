@@ -11,7 +11,9 @@ import {
     CheckCircle2,
     AlertCircle,
     Loader2,
+    Github,
 } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
     Card,
@@ -32,8 +34,10 @@ const ACCEPT = ".yaml,.yml,.json";
 
 export default function DropPage() {
     const [files, setFiles] = useState<UploadedFile[]>([]);
+    const [githubUrl, setGithubUrl] = useState("");
     const [isDragOver, setIsDragOver] = useState(false);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
+    const [error, setError] = useState("");
     const inputRef = useRef<HTMLInputElement>(null);
     const router = useRouter();
 
@@ -62,21 +66,50 @@ export default function DropPage() {
         [addFiles]
     );
 
-    const handleAnalyze = () => {
+    const handleAnalyze = async () => {
         setIsAnalyzing(true);
-        setFiles((prev) =>
-            prev.map((f) => (f.status === "ready" ? { ...f, status: "uploading" } : f))
-        );
-        // Simulate pipeline analysis → navigate to results
-        setTimeout(() => {
-            setFiles((prev) =>
-                prev.map((f) => (f.status === "uploading" ? { ...f, status: "done" } : f))
-            );
-            // In production, this would be the real API response.
-            // The /results page loads from sessionStorage or uses demo data.
-            sessionStorage.removeItem("autoapi_report");
-            setTimeout(() => router.push("/results"), 600);
-        }, 2000);
+        setError("");
+
+        try {
+            if (githubUrl) {
+                // Handle GitHub URL
+                const res = await fetch("http://localhost:8000/api/v1/github-run", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ url: githubUrl, approve: true, live: true })
+                });
+
+                if (!res.ok) {
+                    throw new Error("Failed to analyze GitHub URL");
+                }
+                const data = await res.json();
+                sessionStorage.setItem("autoapi_report", JSON.stringify(data.report));
+                router.push("/results");
+            } else if (files.length > 0) {
+                // Handle File Upload
+                const formData = new FormData();
+                formData.append("file", files[0].file);
+                formData.append("approve", "true");
+                formData.append("live", "true");
+
+                const res = await fetch("http://localhost:8000/api/v1/upload", {
+                    method: "POST",
+                    body: formData
+                });
+
+                if (!res.ok) {
+                    throw new Error("Failed to upload and analyze file");
+                }
+                const data = await res.json();
+                sessionStorage.setItem("autoapi_report", JSON.stringify(data.report));
+                router.push("/results");
+            }
+        } catch (err: any) {
+            setError(err.message || "An error occurred during analysis.");
+            setIsAnalyzing(false);
+        }
     };
 
     const readyCount = files.filter((f) => f.status === "ready").length;
@@ -164,6 +197,28 @@ export default function DropPage() {
                     </CardContent>
                 </Card>
 
+                {/* GitHub URL Input */}
+                <div className="flex items-center gap-4 mb-8">
+                    <div className="h-px bg-zinc-800 flex-1"></div>
+                    <span className="text-zinc-500 text-sm font-medium">OR</span>
+                    <div className="h-px bg-zinc-800 flex-1"></div>
+                </div>
+
+                <Card className="border-zinc-800 bg-zinc-900/60 backdrop-blur-md mb-8">
+                    <CardContent className="p-6">
+                        <label className="block text-sm font-medium text-zinc-300 mb-2 flex items-center gap-2">
+                            <Github className="size-4" /> Fetch from GitHub URL
+                        </label>
+                        <Input
+                            type="url"
+                            value={githubUrl}
+                            onChange={(e) => setGithubUrl(e.target.value)}
+                            placeholder="https://github.com/user/repo/blob/main/openapi.yaml"
+                            className="bg-zinc-800/50 border-zinc-700 text-white placeholder:text-zinc-600 focus:border-emerald-500 focus:ring-emerald-500"
+                        />
+                    </CardContent>
+                </Card>
+
                 {/* File list */}
                 {files.length > 0 && (
                     <Card className="border-zinc-800 bg-zinc-900/60 backdrop-blur-md mb-8 animate-fadeIn">
@@ -220,8 +275,15 @@ export default function DropPage() {
                     </Card>
                 )}
 
+                {error && (
+                    <div className="p-4 mb-8 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-center flex items-center justify-center gap-2">
+                        <AlertCircle className="size-5" />
+                        {error}
+                    </div>
+                )}
+
                 {/* Analyze button */}
-                {readyCount > 0 && (
+                {(readyCount > 0 || githubUrl.length > 5) && (
                     <div className="flex justify-center animate-fadeIn">
                         <Button
                             onClick={handleAnalyze}
@@ -231,7 +293,7 @@ export default function DropPage() {
                             {isAnalyzing ? (
                                 <><Loader2 className="size-5 animate-spin" /> Analyzing...</>
                             ) : (
-                                <>Analyze {readyCount} File{readyCount > 1 ? "s" : ""} →</>
+                                <>Analyze {(readyCount > 0) ? `${readyCount} File${readyCount > 1 ? "s" : ""}` : "URL"} →</>
                             )}
                         </Button>
                     </div>

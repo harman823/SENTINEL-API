@@ -19,7 +19,8 @@ def execute_api_node(state: GraphState) -> Dict[str, Any]:
             }
 
         # Default to dry-run; live mode would be toggled via config/CLI flag
-        executor = APIExecutor(dry_run=True)
+        live = state.get("live", False)
+        executor = APIExecutor(dry_run=not live)
         results = executor.execute(test_cases)
 
         return {

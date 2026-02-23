@@ -43,6 +43,7 @@ class GraphState(TypedDict):
 
     # Environment
     environment: str  # dev | staging | prod
+    live: bool
 
     # Output
     report: Dict[str, Any]

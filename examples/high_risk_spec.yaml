@@ -1,0 +1,88 @@
+openapi: 3.0.0
+info:
+  title: Highly Vulnerable Example API
+  description: This API is intentionally designed with numerous linting errors, security vulnerabilities, and high-risk operations for testing the AutoAPI Intelligence platform.
+  # LINT ERROR: Missing 'version' field
+
+servers:
+  # SECURITY RISK: Using insecure HTTP instead of HTTPS
+  - url: http://api.vulnerable-corp.internal/v1
+    description: Internal unencrypted endpoint
+
+# LINT & SECURITY: No securitySchemes or global security defined
+
+paths:
+  /admin/database/wipe:
+    delete:
+      # LINT ERROR: Missing operationId
+      summary: Wipe entire database
+      description: Deletes all records in the database.
+      # SECURITY RISK: Highly destructive operation with strictly no authentication required!
+      responses:
+        '200':
+          description: Database wiped successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  records_deleted:
+                    type: integer
+        # LINT ERROR: Missing error responses like 401, 403, 500
+
+  /users/export-pii:
+    get:
+      summary: Export all PII data
+      # LINT ERROR: Missing description
+      # SECURITY RISK: Sensitive data exposure endpoint (PII)
+      responses:
+        '200':
+          description: A dump of all user personal data
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                    ssn: # SECURITY RISK: Exposing Social Security Numbers
+                      type: string
+                    credit_card: # SECURITY RISK: Exposing raw CC numbers
+                      type: string
+                    password_plain: # SECURITY RISK: Exposing plain text passwords
+                      type: string
+
+  /auth/login:
+    post:
+      summary: Authenticate user
+      # LINT ERROR: Missing tags, missing operationId
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                username:
+                  type: string
+                password:
+                  type: string
+                  # LINT ERROR: Missing 'format: password' for security tool detection
+      responses:
+        # LINT ERROR: Missing 200 OK response entirely
+        '401':
+          description: Unauthorized
+        '500':
+          description: Internal Server Error
+
+  /system/status:
+    get:
+      summary: System status
+      responses:
+        '200':
+          description: OK
+          # LINT ERROR: Missing content definition for a 200 OK response
