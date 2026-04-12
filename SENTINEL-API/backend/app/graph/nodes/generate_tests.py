@@ -1,5 +1,6 @@
 from typing import Dict, Any
 from backend.app.services.test_generator import TestGenerator
+from backend.app.services.semantic_traffic_replay import SemanticTrafficReplay
 from backend.app.graph.state import GraphState
 
 
@@ -27,6 +28,14 @@ def generate_tests_node(state: GraphState) -> Dict[str, Any]:
             operations,
             policy_results=policy_results,
         )
+
+        traffic_samples = state.get("traffic_samples", []) or []
+        if traffic_samples:
+            replay_cases = SemanticTrafficReplay.to_test_cases(
+                spec=spec_normalized,
+                records=traffic_samples,
+            )
+            test_cases.extend(replay_cases)
 
         return {
             "test_cases": test_cases,

@@ -1,6 +1,7 @@
 from typing import Dict, Any, List
 from backend.app.graph.state import GraphState
 from backend.app.core.llm import get_llm
+from backend.app.services.pr_remediation_bot import PRRemediationBot
 import yaml
 import copy
 import logging
@@ -76,11 +77,16 @@ Return a list of these JSON change objects representing the remediation patch.
             
             logger.info(f"Generated auto-remediation for drift on {endpoint}")
 
-        return {"remediation_results": remediation_results}
+        pr_suggestions = PRRemediationBot.build_suggestions(remediation_results)
+        return {
+            "remediation_results": remediation_results,
+            "pr_remediation_suggestions": pr_suggestions,
+        }
         
     except Exception as e:
         logger.error(f"Remediation failed: {str(e)}")
         return {
             "remediation_results": [],
+            "pr_remediation_suggestions": [],
             "errors": (state.get("errors") or []) + [f"Remediation failed: {str(e)}"],
         }

@@ -8,7 +8,7 @@ from typing import Dict, Any, List, Optional
 import json
 import logging
 from backend.app.schemas.spec import Operation
-from backend.app.core.llm import get_llm, get_llm_text
+from backend.app.core.llm import get_llm_text
 
 logger = logging.getLogger(__name__)
 

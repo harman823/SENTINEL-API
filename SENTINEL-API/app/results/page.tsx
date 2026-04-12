@@ -66,6 +66,7 @@ interface TestResult {
     expected_status: number;
     is_destructive: boolean;
     risk_score: number;
+    test_type?: string;
     execution: Execution;
     validation: Validation;
 }
@@ -95,6 +96,30 @@ interface Report {
     risk_distribution: { high: number; medium: number; low: number };
     policy_results: PolicyResult[];
     test_results: TestResult[];
+    chaos_summary?: {
+        enabled: boolean;
+        total_injected: number;
+        documented_failures: number;
+        undocumented_failures: number;
+    };
+    iac_validation?: {
+        passed: boolean;
+        score: number;
+        checks: Array<{ control: string; required: boolean; detected: boolean; passed: boolean }>;
+        missing_controls: string[];
+    };
+    safe_to_ship?: {
+        safe_to_ship: boolean;
+        score: number;
+        blockers: string[];
+    };
+    remediation_summary?: {
+        total_remediations: number;
+        total_pr_suggestions: number;
+    };
+    rca_summary?: { total_findings: number };
+    compliance_scorecard?: { overall_compliance_health: number };
+    breaking_change_summary?: { total_predictions: number; likely_breaking: number };
     errors: string[];
 }
 
@@ -232,6 +257,18 @@ function riskColor(score: number) {
     return "text-emerald-400";
 }
 
+function insightStatusTone(status: "active" | "partial" | "idle") {
+    if (status === "active") return "text-emerald-400 border-emerald-500/30 bg-emerald-500/10";
+    if (status === "partial") return "text-amber-400 border-amber-500/30 bg-amber-500/10";
+    return "text-zinc-400 border-zinc-700 bg-zinc-800/40";
+}
+
+function insightStatusLabel(status: "active" | "partial" | "idle") {
+    if (status === "active") return "Active";
+    if (status === "partial") return "Needs Attention";
+    return "Idle";
+}
+
 /* ─── Component ─── */
 export default function ResultsPage() {
     const [report, setReport] = useState<Report | null>(null);
@@ -297,6 +334,155 @@ export default function ResultsPage() {
 
     const { summary, risk_distribution, test_results, spec_info } = report;
     const passRate = summary.pass_rate;
+    const semanticReplayCount = test_results.filter((t) => t.test_type === "semantic_replay").length;
+    const journeyCount = test_results.filter((t) => t.test_type === "stateful_journey").length;
+    const fuzzCount = test_results.filter((t) => t.test_type === "fuzzing").length;
+    const chaosTotal = report.chaos_summary?.total_injected ?? 0;
+    const chaosUndocumented = report.chaos_summary?.undocumented_failures ?? 0;
+    const iacChecks = report.iac_validation?.checks?.length ?? 0;
+    const iacMissing = report.iac_validation?.missing_controls?.length ?? 0;
+    const iacScore = report.iac_validation?.score ?? 0;
+    const safeToShip = report.safe_to_ship?.safe_to_ship;
+    const safeToShipScore = report.safe_to_ship?.score ?? 0;
+    const safeToShipBlockers = report.safe_to_ship?.blockers?.length ?? 0;
+    const totalRemediations = report.remediation_summary?.total_remediations ?? 0;
+    const prSuggestions = report.remediation_summary?.total_pr_suggestions ?? 0;
+    const blastNodes = blastRadius?.nodes?.length ?? 0;
+    const blastEdges = blastRadius?.edges?.length ?? 0;
+    const rcaFindings = report.rca_summary?.total_findings ?? 0;
+    const complianceHealth = report.compliance_scorecard?.overall_compliance_health ?? 0;
+    const breakingPredictions = report.breaking_change_summary?.total_predictions ?? 0;
+    const likelyBreaking = report.breaking_change_summary?.likely_breaking ?? 0;
+
+    const advancedInsights = [
+        {
+            name: "Semantic Traffic Replay",
+            status: semanticReplayCount > 0 ? "active" as const : "idle" as const,
+            detail:
+                semanticReplayCount > 0
+                    ? `${semanticReplayCount} replay test(s) generated from sanitized traffic`
+                    : "No replay samples loaded in this run",
+        },
+        {
+            name: "Stateful User Journey Generator",
+            status: journeyCount > 0 ? "active" as const : "idle" as const,
+            detail:
+                journeyCount > 0
+                    ? `${journeyCount} lifecycle journey test(s) chained from endpoint metadata`
+                    : "No multi-step resource journey inferred",
+        },
+        {
+            name: "Smart Fuzzing Agent",
+            status: fuzzCount > 0 ? "active" as const : "idle" as const,
+            detail:
+                fuzzCount > 0
+                    ? `${fuzzCount} intelligent fuzz test(s) generated from schema`
+                    : "No fuzzable request-body operations in this run",
+        },
+        {
+            name: "Chaos Resilience Tester",
+            status:
+                chaosTotal > 0
+                    ? (chaosUndocumented > 0 ? ("partial" as const) : ("active" as const))
+                    : ("idle" as const),
+            detail:
+                chaosTotal > 0
+                    ? `${chaosTotal} fault injection(s), ${chaosUndocumented} undocumented failure mode(s)`
+                    : "Chaos simulation disabled for this run",
+        },
+    ];
+
+    const devopsInsights = [
+        {
+            name: "Infrastructure-as-Contract (IaC) Validator",
+            status:
+                iacChecks === 0
+                    ? ("idle" as const)
+                    : report.iac_validation?.passed
+                        ? ("active" as const)
+                        : ("partial" as const),
+            detail:
+                iacChecks === 0
+                    ? "No IaC sources provided"
+                    : `Score ${iacScore.toFixed(1)} with ${iacMissing} missing control(s)`,
+        },
+        {
+            name: "Automatic Mock Server Factory",
+            status: spec_info.total_operations > 0 ? ("active" as const) : ("idle" as const),
+            detail: `Ready to mock ${spec_info.total_operations} operation(s) from normalized spec`,
+        },
+        {
+            name: "Deployment Safe-to-Ship Gate",
+            status:
+                safeToShip === undefined
+                    ? ("idle" as const)
+                    : safeToShip
+                        ? ("active" as const)
+                        : ("partial" as const),
+            detail:
+                safeToShip === undefined
+                    ? "No deployment gate result in report"
+                    : `Gate score ${safeToShipScore.toFixed(1)} with ${safeToShipBlockers} blocker(s)`,
+        },
+        {
+            name: "PR Remediation Bot",
+            status:
+                prSuggestions > 0
+                    ? ("active" as const)
+                    : totalRemediations > 0
+                        ? ("partial" as const)
+                        : ("idle" as const),
+            detail:
+                prSuggestions > 0
+                    ? `${prSuggestions} remediation PR suggestion(s) prepared`
+                    : totalRemediations > 0
+                        ? `${totalRemediations} remediation(s) generated without PR payload`
+                        : "No drift remediation required",
+        },
+    ];
+
+    const governanceInsights = [
+        {
+            name: "API Blast Radius Explorer",
+            status: blastNodes > 0 ? ("active" as const) : ("idle" as const),
+            detail:
+                blastNodes > 0
+                    ? `${blastNodes} graph node(s), ${blastEdges} dependency edge(s) mapped`
+                    : "Blast radius graph unavailable in this run",
+        },
+        {
+            name: "Automated Root Cause Analyst (RCA)",
+            status: rcaFindings > 0 ? ("active" as const) : ("idle" as const),
+            detail:
+                rcaFindings > 0
+                    ? `${rcaFindings} failure root-cause finding(s) generated`
+                    : "No failed validations requiring RCA",
+        },
+        {
+            name: "Compliance Scorecard",
+            status:
+                complianceHealth >= 80
+                    ? ("active" as const)
+                    : complianceHealth > 0
+                        ? ("partial" as const)
+                        : ("idle" as const),
+            detail:
+                complianceHealth > 0
+                    ? `Compliance health ${complianceHealth.toFixed(1)}%`
+                    : "No compliance score available",
+        },
+        {
+            name: "Breaking Change Predictor",
+            status:
+                breakingPredictions > 0
+                    ? (likelyBreaking > 0 ? ("partial" as const) : ("active" as const))
+                    : ("idle" as const),
+            detail:
+                breakingPredictions > 0
+                    ? `${breakingPredictions} predicted change(s), ${likelyBreaking} likely breaking`
+                    : "No spec-history prediction data in this run",
+        },
+    ];
 
     return (
         <div className="min-h-screen bg-black text-white bg-sentinel-pattern">
@@ -471,6 +657,95 @@ export default function ResultsPage() {
                     <TimeTravelDebugger history={executionHistory} />
                     <BlastRadiusGraph data={blastRadius} />
                 </div>
+
+                {/* Detailed Insights */}
+                <Card className="border-zinc-800 bg-zinc-900/60 backdrop-blur-md mb-8 animate-fadeIn">
+                    <CardHeader>
+                        <CardTitle className="flex items-center gap-2">
+                            <Shield className="size-5 text-cyan-400" />
+                            Detailed Insights
+                        </CardTitle>
+                        <CardDescription className="text-zinc-500">
+                            Advanced testing, DevOps automation, and governance intelligence coverage
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+                        <div className="space-y-3">
+                            <h3 className="text-sm font-semibold text-zinc-300 tracking-wide">
+                                Advanced Testing & Simulation
+                            </h3>
+                            {advancedInsights.map((item) => (
+                                <div
+                                    key={item.name}
+                                    className="rounded-lg border border-zinc-800 bg-zinc-800/30 p-3 space-y-2"
+                                >
+                                    <div className="flex items-center justify-between gap-2">
+                                        <p className="text-sm font-medium text-zinc-200 leading-tight">
+                                            {item.name}
+                                        </p>
+                                        <Badge
+                                            variant="outline"
+                                            className={`text-[10px] ${insightStatusTone(item.status)}`}
+                                        >
+                                            {insightStatusLabel(item.status)}
+                                        </Badge>
+                                    </div>
+                                    <p className="text-xs text-zinc-500 leading-relaxed">{item.detail}</p>
+                                </div>
+                            ))}
+                        </div>
+
+                        <div className="space-y-3">
+                            <h3 className="text-sm font-semibold text-zinc-300 tracking-wide">
+                                DevOps & Infrastructure
+                            </h3>
+                            {devopsInsights.map((item) => (
+                                <div
+                                    key={item.name}
+                                    className="rounded-lg border border-zinc-800 bg-zinc-800/30 p-3 space-y-2"
+                                >
+                                    <div className="flex items-center justify-between gap-2">
+                                        <p className="text-sm font-medium text-zinc-200 leading-tight">
+                                            {item.name}
+                                        </p>
+                                        <Badge
+                                            variant="outline"
+                                            className={`text-[10px] ${insightStatusTone(item.status)}`}
+                                        >
+                                            {insightStatusLabel(item.status)}
+                                        </Badge>
+                                    </div>
+                                    <p className="text-xs text-zinc-500 leading-relaxed">{item.detail}</p>
+                                </div>
+                            ))}
+                        </div>
+
+                        <div className="space-y-3">
+                            <h3 className="text-sm font-semibold text-zinc-300 tracking-wide">
+                                Intelligence & Governance
+                            </h3>
+                            {governanceInsights.map((item) => (
+                                <div
+                                    key={item.name}
+                                    className="rounded-lg border border-zinc-800 bg-zinc-800/30 p-3 space-y-2"
+                                >
+                                    <div className="flex items-center justify-between gap-2">
+                                        <p className="text-sm font-medium text-zinc-200 leading-tight">
+                                            {item.name}
+                                        </p>
+                                        <Badge
+                                            variant="outline"
+                                            className={`text-[10px] ${insightStatusTone(item.status)}`}
+                                        >
+                                            {insightStatusLabel(item.status)}
+                                        </Badge>
+                                    </div>
+                                    <p className="text-xs text-zinc-500 leading-relaxed">{item.detail}</p>
+                                </div>
+                            ))}
+                        </div>
+                    </CardContent>
+                </Card>
 
                 {/* ─── Test Results Table ─── */}
                 <Card className="border-zinc-800 bg-zinc-900/60 backdrop-blur-md animate-fadeIn">

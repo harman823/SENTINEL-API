@@ -1,6 +1,9 @@
+import os
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Any, Dict, List, Optional
+
 import httpx
-from typing import Dict, Any, List
 
 
 class APIExecutor:
@@ -12,19 +15,49 @@ class APIExecutor:
     without making real HTTP requests.
     """
 
-    def __init__(self, timeout: float = 3.0, dry_run: bool = True):
+    def __init__(
+        self,
+        timeout: float = 3.0,
+        dry_run: bool = True,
+        max_concurrency: Optional[int] = None,
+    ):
         self.timeout = timeout
         self.dry_run = dry_run
+        cpu_hint = max((os.cpu_count() or 4), 4)
+        self.max_concurrency = max_concurrency or min(32, cpu_hint * 2)
 
     def execute(self, test_cases: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Execute all test cases and return results."""
-        results: List[Dict[str, Any]] = []
-        for tc in test_cases:
-            result = self._execute_single(tc)
-            results.append(result)
-        return results
+        if not test_cases:
+            return []
 
-    def _execute_single(self, test_case: Dict[str, Any]) -> Dict[str, Any]:
+        if self.dry_run:
+            return [self._dry_run_result(tc) for tc in test_cases]
+
+        max_workers = max(1, min(self.max_concurrency, len(test_cases)))
+        limits = httpx.Limits(max_connections=max_workers * 2, max_keepalive_connections=max_workers)
+
+        with httpx.Client(timeout=self.timeout, limits=limits, http2=True) as client:
+            if max_workers == 1:
+                return [self._execute_single(tc, client) for tc in test_cases]
+
+            ordered_results: List[Optional[Dict[str, Any]]] = [None] * len(test_cases)
+            with ThreadPoolExecutor(max_workers=max_workers) as pool:
+                future_to_index = {
+                    pool.submit(self._execute_single, tc, client): index
+                    for index, tc in enumerate(test_cases)
+                }
+                for future in as_completed(future_to_index):
+                    idx = future_to_index[future]
+                    ordered_results[idx] = future.result()
+
+            return [item for item in ordered_results if item is not None]
+
+    def _execute_single(
+        self,
+        test_case: Dict[str, Any],
+        client: Optional[httpx.Client] = None,
+    ) -> Dict[str, Any]:
         """Execute a single test case."""
         tc_id = test_case.get("id", "unknown")
         method = test_case.get("method", "GET")
@@ -37,17 +70,18 @@ class APIExecutor:
         if self.dry_run:
             return self._dry_run_result(test_case)
 
-        start_time = time.time()
+        start_time = time.perf_counter()
+        own_client = client is None
+        active_client = client or httpx.Client(timeout=self.timeout, http2=True)
         try:
-            with httpx.Client(timeout=self.timeout) as client:
-                response = client.request(
-                    method=method,
-                    url=url,
-                    headers=headers,
-                    json=body,
-                    params=query_params,
-                )
-            elapsed_ms = round((time.time() - start_time) * 1000, 1)
+            response = active_client.request(
+                method=method,
+                url=url,
+                headers=headers,
+                json=body,
+                params=query_params,
+            )
+            elapsed_ms = round((time.perf_counter() - start_time) * 1000, 1)
 
             return {
                 "test_id": tc_id,
@@ -63,7 +97,7 @@ class APIExecutor:
             }
 
         except httpx.TimeoutException:
-            elapsed_ms = round((time.time() - start_time) * 1000, 1)
+            elapsed_ms = round((time.perf_counter() - start_time) * 1000, 1)
             return {
                 "test_id": tc_id,
                 "method": method,
@@ -78,7 +112,7 @@ class APIExecutor:
             }
 
         except Exception as e:
-            elapsed_ms = round((time.time() - start_time) * 1000, 1)
+            elapsed_ms = round((time.perf_counter() - start_time) * 1000, 1)
             return {
                 "test_id": tc_id,
                 "method": method,
@@ -91,6 +125,9 @@ class APIExecutor:
                 "response_body_preview": None,
                 "error": str(e),
             }
+        finally:
+            if own_client:
+                active_client.close()
 
     def _dry_run_result(self, test_case: Dict[str, Any]) -> Dict[str, Any]:
         """Simulate execution without making a real HTTP request."""

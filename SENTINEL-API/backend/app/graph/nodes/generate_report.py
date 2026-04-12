@@ -25,6 +25,13 @@ def generate_report_node(state: GraphState) -> Dict[str, Any]:
             security_results=state.get("security_results", []),
             drift_results=state.get("drift_results", []),
             compliance_mappings=state.get("compliance_mappings", []),
+            remediation_results=state.get("remediation_results", []),
+            pr_remediation_suggestions=state.get("pr_remediation_suggestions", []),
+            chaos_results=state.get("chaos_results", []),
+            rca_results=state.get("rca_results", []),
+            breaking_change_predictions=state.get("breaking_change_predictions", []),
+            iac_validation=state.get("iac_validation", {}),
+            environment=state.get("environment", "dev"),
         )
 
         return {

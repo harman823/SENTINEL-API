@@ -174,6 +174,7 @@ class CICDFormatter:
             "drift_count": report.get("drift_summary", {}).get("total_drifts", 0),
             "compliance_frameworks": report.get("compliance_summary", {}).get("frameworks_covered", []),
             "risk_distribution": report.get("risk_distribution", {}),
+            "safe_to_ship": report.get("safe_to_ship", {}),
             "errors": report.get("errors", []),
             "generated_at": report.get("generated_at", ""),
         }, indent=2)
@@ -190,6 +191,10 @@ class CICDFormatter:
         """
         if report.get("errors"):
             return 1
+
+        safe_to_ship = report.get("safe_to_ship", {})
+        if safe_to_ship and not safe_to_ship.get("safe_to_ship", True):
+            return 2
 
         summary = report.get("summary", {})
         if summary.get("validation_failed", 0) > 0:

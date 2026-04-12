@@ -18,7 +18,7 @@ def is_ollama_available() -> bool:
     if _ollama_available is not None:
         return _ollama_available
     try:
-        sock = socket.create_connection((OLLAMA_HOST, OLLAMA_PORT), timeout=1.0)
+        sock = socket.create_connection((OLLAMA_HOST, OLLAMA_PORT), timeout=0.3)
         sock.close()
         _ollama_available = True
     except (socket.timeout, ConnectionRefusedError, OSError):
@@ -48,8 +48,8 @@ def get_llm(model_name: str = "llama3.2", temperature: float = 0.0):
             temperature=temperature,
             base_url=f"http://{OLLAMA_HOST}:{OLLAMA_PORT}",
             format="json",
-            num_predict=512,
-            num_ctx=2048,
+            num_predict=256,
+            num_ctx=1024,
         )
     return _llm_json_cache[key]
 
