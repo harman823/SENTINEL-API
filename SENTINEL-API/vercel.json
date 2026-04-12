@@ -1,9 +1,6 @@
 {
-    "version": 2,
-    "rewrites": [
-        {
-            "source": "/api/(.*)",
-            "destination": "/api/index.py"
-        }
-    ]
+    "buildCommand": "npm run build",
+    "devCommand": "npm run dev:frontend",
+    "installCommand": "npm install",
+    "framework": "nextjs"
 }
