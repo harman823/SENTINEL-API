@@ -1,5 +1,13 @@
 import yaml
+try:
+    from yaml import CSafeLoader as SafeLoader
+except ImportError:
+    from yaml import SafeLoader
 import json
+try:
+    import orjson
+except ImportError:
+    orjson = None
 import os
 import httpx
 from urllib.parse import urlparse
@@ -45,10 +53,12 @@ class OpenAPILoader:
                     
                     # Try parsing as JSON first, then YAML
                     try:
+                        if orjson:
+                            return orjson.loads(content)
                         return json.loads(content)
-                    except json.JSONDecodeError:
+                    except Exception:
                         try:
-                            return yaml.safe_load(content)
+                            return yaml.load(content, Loader=SafeLoader)
                         except yaml.YAMLError as e:
                             raise ValueError(f"Fetched content is neither valid JSON nor YAML: {e}")
             except httpx.RequestError as e:
@@ -72,13 +82,15 @@ class OpenAPILoader:
     @staticmethod
     def _parse_yaml(content: str) -> Dict[str, Any]:
         try:
-            return yaml.safe_load(content)
+            return yaml.load(content, Loader=SafeLoader)
         except yaml.YAMLError as e:
             raise ValueError(f"Invalid YAML format: {e}")
 
     @staticmethod
     def _parse_json(content: str) -> Dict[str, Any]:
         try:
+            if orjson:
+                return orjson.loads(content)
             return json.loads(content)
-        except json.JSONDecodeError as e:
+        except Exception as e:
             raise ValueError(f"Invalid JSON format: {e}")
