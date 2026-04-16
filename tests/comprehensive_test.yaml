@@ -1,0 +1,99 @@
+openapi: "3.0.0"
+info:
+  title: Comprehensive Security & Parameter API
+  version: "1.0.0"
+  description: API test showing all parameters, PII, and security features.
+security:
+  - ApiKeyAuth: []
+paths:
+  /users/{userId}:
+    get:
+      summary: Get user details
+      operationId: getUserDetails
+      description: Returns user info. Should be safe but has PII in response.
+      tags:
+        - Users
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: includeEmail
+          in: query
+          schema:
+            type: boolean
+        - name: Accept-Language
+          in: header
+          schema:
+            type: string
+        - name: session_id
+          in: cookie
+          schema:
+            type: string
+      responses:
+        "200":
+          description: A user object
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: integer
+                  email:
+                    type: string
+                  first_name:
+                    type: string
+                  last_name:
+                    type: string
+                  address:
+                    type: object
+                    properties:
+                      street:
+                        type: string
+                      city:
+                        type: string
+                      zip_code:
+                        type: string
+    put:
+      summary: Update user details
+      operationId: updateUserDetails
+      description: Destructive user update. Will have high schema complexity and PII.
+      tags:
+        - Users
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                password:
+                  type: string
+                credit_card:
+                  type: object
+                  properties:
+                    card_number:
+                      type: string
+                    cvv:
+                      type: string
+                    expiration:
+                      type: string
+      responses:
+        "200":
+          description: Successfully updated
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-KEY

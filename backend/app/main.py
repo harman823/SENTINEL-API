@@ -145,6 +145,7 @@ def _initial_state(request: RunPipelineRequest) -> Dict[str, Any]:
 
 
 @app.get("/health")
+@app.get("/api/health")
 async def health():
     return {"status": "ok", "service": "autoapi-intelligence"}
 

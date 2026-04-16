@@ -180,7 +180,7 @@ export default function LandingPage() {
       <section
         id="about"
         ref={aboutRef}
-        className="relative py-28 px-6 max-w-6xl mx-auto bg-sentinel-pattern"
+        className="relative py-28 px-6 max-w-6xl mx-auto bg-black"
       >
         <div className="text-center mb-16 animate-fadeIn">
           <p className="text-emerald-400 text-sm font-semibold tracking-widest uppercase mb-3">

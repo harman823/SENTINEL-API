@@ -1,5 +1,10 @@
 # SENTINEL-API
 
+## Live Links
+
+- Production App: `https://sentinel-api-tau.vercel.app`
+- API Health Check: `https://sentinel-api-tau.vercel.app/api/health`
+
 ## Setup & Run
 
 ### 1. Environment Setup

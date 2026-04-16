@@ -485,7 +485,7 @@ export default function ResultsPage() {
     ];
 
     return (
-        <div className="min-h-screen bg-black text-white bg-sentinel-pattern">
+        <div className="min-h-screen bg-black text-white">
             {/* Top bar */}
             <nav className="flex items-center justify-between px-8 py-6 max-w-7xl mx-auto">
                 <Link

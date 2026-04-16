@@ -291,7 +291,7 @@ export default function DropPage() {
                     throw new Error("Please enter a valid URL starting with http:// or https://");
                 }
 
-                fetchPromise = fetch("http://localhost:8000/api/v1/github-run", {
+                fetchPromise = fetch("/api/v1/github-run", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ url: githubUrl, approve: true, live: false }),
@@ -302,7 +302,7 @@ export default function DropPage() {
                 formData.append("approve", "true");
                 formData.append("live", "false");
 
-                fetchPromise = fetch("http://localhost:8000/api/v1/upload", {
+                fetchPromise = fetch("/api/v1/upload", {
                     method: "POST",
                     body: formData,
                 });
@@ -342,7 +342,7 @@ export default function DropPage() {
     const readyCount = files.filter((f) => f.status === "ready").length;
 
     return (
-        <div className="min-h-screen bg-black text-white bg-sentinel-pattern">
+        <div className="min-h-screen bg-black text-white">
             {/* Pipeline progress overlay */}
             {showProgress && <PipelineProgress onComplete={handleProgressComplete} />}
 
