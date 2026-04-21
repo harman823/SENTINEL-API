@@ -1,6 +1,6 @@
 "use client";
 
-import { FolderGit2, GitBranch, Globe2, Layers3, Languages, ShieldAlert } from "lucide-react";
+import { Braces, FolderGit2, GitBranch, Globe2, Layers3, Languages, ShieldAlert } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -23,7 +23,7 @@ export function RepoInspectionPanel({
           Repository Intake
         </CardTitle>
         <CardDescription className="text-zinc-500">
-          Repo-level metadata, detected formats, and the selected API spec used for analysis
+          Repo-level metadata, detected formats, frameworks, and the API source used for analysis
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
@@ -58,8 +58,11 @@ export function RepoInspectionPanel({
                 <p className="mt-2 text-sm text-zinc-200">{repoInspection.total_files.toLocaleString()}</p>
               </div>
               <div className="rounded-xl border border-zinc-800 bg-zinc-900/60 p-3">
-                <p className="text-xs text-zinc-500">Selected Spec</p>
+                <p className="text-xs text-zinc-500">Selected Source</p>
                 <p className="mt-2 text-sm text-zinc-200">{repoInspection.selected_spec?.path ?? "n/a"}</p>
+                <p className="mt-1 text-xs uppercase tracking-[0.22em] text-zinc-500">
+                  {repoInspection.selected_source_kind === "code" ? "code-derived" : "openapi"}
+                </p>
               </div>
             </div>
           </div>
@@ -116,6 +119,22 @@ export function RepoInspectionPanel({
             </div>
           </div>
         </div>
+
+        {repoInspection.detected_frameworks.length > 0 && (
+          <div className="rounded-2xl border border-zinc-800 bg-black/40 p-4">
+            <div className="mb-3 flex items-center gap-2 text-sm font-medium text-zinc-200">
+              <Braces className="size-4 text-amber-300" />
+              Framework Routes
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {repoInspection.detected_frameworks.map((item) => (
+                <Badge key={item.framework} variant="outline" className="border-zinc-700 bg-zinc-900/70 text-zinc-300">
+                  {item.framework} {item.route_count} routes
+                </Badge>
+              ))}
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 import httpx
 
 from backend.app.services.openapi_loader import OpenAPILoader
+from backend.app.services.repo_code_api_extractor import RepoCodeApiExtractor
 from backend.app.services.risk_scorer import RiskScorer
 from backend.app.services.spec_normalizer import SpecNormalizer
 from backend.app.services.spec_validator import SpecValidator
@@ -17,6 +18,7 @@ GITHUB_API_BASE = "https://api.github.com"
 RAW_GITHUB_BASE = "https://raw.githubusercontent.com"
 SPEC_EXTENSIONS = {".json", ".yaml", ".yml"}
 SPEC_HINTS = ("openapi", "swagger", "api", "spec")
+MAX_SOURCE_FILE_SIZE = 200_000
 
 
 @dataclass
@@ -278,6 +280,30 @@ class GitHubRepoAnalyzer:
         }
 
     @classmethod
+    def _fetch_source_files(
+        cls,
+        parsed_repo: ParsedRepoUrl,
+        ref: str,
+        tree_entries: List[Dict[str, Any]],
+    ) -> Dict[str, str]:
+        file_paths = [
+            entry.get("path", "")
+            for entry in tree_entries
+            if entry.get("type") == "blob"
+            and RepoCodeApiExtractor.is_candidate_source_file(entry.get("path", ""))
+            and int(entry.get("size", 0) or 0) <= MAX_SOURCE_FILE_SIZE
+        ]
+        selected_files = RepoCodeApiExtractor.select_source_files(file_paths)
+        contents: Dict[str, str] = {}
+        for path in selected_files:
+            raw_url = f"{RAW_GITHUB_BASE}/{parsed_repo.owner}/{parsed_repo.repo}/{ref}/{path}"
+            try:
+                contents[path] = cls._fetch_text(raw_url)
+            except Exception:
+                continue
+        return contents
+
+    @classmethod
     def inspect_repo(cls, url: str, selected_path: Optional[str] = None) -> Dict[str, Any]:
         parsed_repo = cls._parse_repo_url(url)
 
@@ -301,8 +327,42 @@ class GitHubRepoAnalyzer:
             candidate_meta["candidate_score"] = candidate["score"]
             parsed_candidates.append((spec_raw, candidate_meta, candidate["score"]))
 
-        selected_spec_raw, selected_spec = cls._rank_selected_spec(parsed_candidates)
+        source_files = cls._fetch_source_files(parsed_repo, ref, tree_entries)
+        code_analysis = RepoCodeApiExtractor.analyze_repo_sources(source_files)
+
+        selected_source_kind = "openapi"
+        selected_spec_raw: Dict[str, Any]
+        selected_spec: Dict[str, Any]
+        if any(item[0] is not None for item in parsed_candidates):
+            selected_spec_raw, selected_spec = cls._rank_selected_spec(parsed_candidates)
+        elif code_analysis["summary"]["route_count"] > 0:
+            selected_spec_raw = RepoCodeApiExtractor.synthesize_openapi_spec(
+                repo_name=repo_meta.get("name", parsed_repo.repo),
+                repo_description=repo_meta.get("description"),
+                code_analysis=code_analysis,
+            )
+            selected_spec = {
+                "path": "[source-code]",
+                "raw_url": None,
+                "parseable": True,
+                "title": selected_spec_raw.get("info", {}).get("title"),
+                "version": selected_spec_raw.get("info", {}).get("version"),
+                "total_operations": code_analysis["summary"]["route_count"],
+                "openapi_version": selected_spec_raw.get("openapi"),
+                "errors": [],
+                "candidate_score": 0,
+                "source_kind": "code",
+            }
+            selected_source_kind = "code"
+        else:
+            raise ValueError(
+                "No valid OpenAPI file or supported framework routes were found in this repository. "
+                "Sentinel currently extracts APIs from OpenAPI specs and common framework code such as FastAPI, Flask, Django, Express, and Fastify."
+            )
+
         api_inventory = cls._build_api_inventory(selected_spec_raw)
+        api_inventory["source_kind"] = selected_source_kind
+        api_inventory["code_analysis"] = code_analysis
 
         approval_required = api_inventory["summary"]["destructive_operations"] > 0 or api_inventory["summary"]["high_risk_operations"] > 0
         approval_prompt = (
@@ -328,6 +388,9 @@ class GitHubRepoAnalyzer:
             "languages": cls._language_breakdown(language_bytes),
             "file_formats": cls._list_extensions(file_paths),
             "total_files": len(file_paths),
+            "detected_frameworks": code_analysis.get("frameworks", []),
+            "code_route_count": code_analysis.get("summary", {}).get("route_count", 0),
+            "selected_source_kind": selected_source_kind,
             "candidate_specs": candidate_summaries,
             "selected_spec": selected_spec,
             "approval_required": approval_required,
@@ -358,6 +421,7 @@ class GitHubRepoAnalyzer:
                 "total_files": repo_inspection["total_files"],
             },
             "api_catalog": {
+                "source_kind": selected_source_kind,
                 "selected_spec": selected_spec,
                 "candidate_specs": candidate_summaries,
                 **api_inventory,

@@ -528,7 +528,7 @@ export default function DropPage() {
                   GitHub Repo Intake
                 </CardTitle>
                 <CardDescription className="text-zinc-500">
-                  Paste a repository URL. We&apos;ll inspect the whole repo, build an API manifest, and wait for approval before generating the report.
+                  Paste a repository URL. We&apos;ll inspect the whole repo, detect framework code like FastAPI or Flask, build an API manifest, and wait for approval before generating the report.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-5">
@@ -615,6 +615,16 @@ export default function DropPage() {
                             <p className="mt-2 text-lg font-semibold text-cyan-300">{repoInspection.file_formats.length}</p>
                           </div>
                         </div>
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          <Badge variant="outline" className="border-zinc-700 bg-zinc-900/70 text-zinc-300">
+                            Source {repoInspection.selected_source_kind === "code" ? "Code" : "OpenAPI"}
+                          </Badge>
+                          {repoInspection.detected_frameworks.map((item) => (
+                            <Badge key={item.framework} variant="outline" className="border-amber-500/30 bg-amber-500/10 text-amber-200">
+                              {item.framework} {item.route_count} routes
+                            </Badge>
+                          ))}
+                        </div>
                       </div>
                     </div>
 
@@ -622,6 +632,11 @@ export default function DropPage() {
                       <div>
                         <p className="mb-3 text-xs font-mono uppercase tracking-[0.28em] text-zinc-500">discovered api files</p>
                         <div className="space-y-2">
+                          {repoInspection.candidate_specs.length === 0 && (
+                            <div className="rounded-xl border border-zinc-800 bg-zinc-950/70 px-4 py-4 text-sm text-zinc-500">
+                              No OpenAPI YAML/JSON file was selected. Sentinel will use framework code extraction for this repo.
+                            </div>
+                          )}
                           {repoInspection.candidate_specs.map((candidate) => {
                             const active = selectedSpecPath === candidate.path;
                             return (
@@ -669,6 +684,18 @@ export default function DropPage() {
                               </Badge>
                             ))}
                           </div>
+                          {apiManifest?.api_catalog.code_analysis && apiManifest.api_catalog.code_analysis.routes.length > 0 && (
+                            <div className="mb-4 rounded-xl border border-zinc-800 bg-black/40 p-3">
+                              <p className="mb-2 text-xs font-mono uppercase tracking-[0.22em] text-zinc-500">code extraction</p>
+                              <div className="flex flex-wrap gap-2">
+                                {apiManifest.api_catalog.code_analysis.frameworks.map((item) => (
+                                  <Badge key={item.framework} variant="outline" className="border-amber-500/30 bg-amber-500/10 text-amber-200">
+                                    {item.framework} {item.route_count} routes
+                                  </Badge>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                           <div className="space-y-3">
                             {repoOperations.slice(0, 5).map((operation) => (
                               <div key={operation.operation_key} className="rounded-xl border border-zinc-800 bg-black/40 p-3">

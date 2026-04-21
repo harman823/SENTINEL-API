@@ -57,8 +57,10 @@ function buildTerminalText({ report, repoInspection, apiManifest }: ExportContex
     "",
     "== REPOSITORY ==",
     `name            : ${repoInspection?.full_name ?? "manual upload"}`,
+    `source_kind     : ${repoInspection?.selected_source_kind ?? "upload"}`,
     `languages       : ${(repoInspection?.languages ?? []).map((item) => `${item.name} ${item.percent}%`).join(", ") || "n/a"}`,
     `file_formats    : ${(repoInspection?.file_formats ?? []).map((item) => `${item.extension} x${item.count}`).join(", ") || "n/a"}`,
+    `frameworks      : ${(repoInspection?.detected_frameworks ?? []).map((item) => `${item.framework} ${item.route_count}`).join(", ") || "n/a"}`,
     "",
     "== RISK HOTSPOTS ==",
     ...(highRisk.length > 0 ? highRisk.map((item) => `- ${formatRiskItem(item)}`) : ["- none"]),
@@ -96,7 +98,9 @@ function buildTerminalMarkdown({ report, repoInspection, apiManifest }: ExportCo
     "```text",
     `languages    : ${(repoInspection?.languages ?? []).map((item) => `${item.name} ${item.percent}%`).join(", ") || "n/a"}`,
     `file_formats : ${(repoInspection?.file_formats ?? []).map((item) => `${item.extension} x${item.count}`).join(", ") || "n/a"}`,
+    `source_kind  : ${repoInspection?.selected_source_kind ?? "upload"}`,
     `selected_api : ${repoInspection?.selected_spec?.path ?? "n/a"}`,
+    `frameworks   : ${(repoInspection?.detected_frameworks ?? []).map((item) => `${item.framework} ${item.route_count}`).join(", ") || "n/a"}`,
     "```",
     "",
     "## High-Risk APIs",
@@ -132,7 +136,9 @@ async function buildDocxBlob(context: ExportContext) {
   const yamlPreview = yaml.dump(
     {
       repo: context.repoInspection?.full_name ?? context.report.spec_info.title,
+      source_kind: context.repoInspection?.selected_source_kind ?? null,
       selected_spec: context.repoInspection?.selected_spec?.path ?? null,
+      frameworks: context.repoInspection?.detected_frameworks ?? [],
       top_high_risk: highRisk.slice(0, 3),
     },
     { lineWidth: 80, noRefs: true }
@@ -167,6 +173,7 @@ async function buildDocxBlob(context: ExportContext) {
           }),
           makeLine(`repo         : ${context.repoInspection?.full_name ?? context.report.spec_info.title}`),
           makeLine(`generated_at : ${context.report.generated_at}`),
+          makeLine(`source_kind  : ${context.repoInspection?.selected_source_kind ?? "upload"}`),
           makeLine(`pass_rate    : ${context.report.summary.pass_rate}%`),
           makeLine(`tests        : ${context.report.summary.total_tests}`),
           makeLine(`errors       : ${context.report.summary.errors}`),

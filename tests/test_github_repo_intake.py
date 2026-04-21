@@ -66,6 +66,82 @@ def test_github_repo_analyzer_builds_repo_manifest(monkeypatch):
     assert api_manifest["api_catalog"]["summary"]["high_risk_operations"] >= 2
     assert api_manifest["api_catalog"]["operations"][0]["risk_score"] >= 0.6
     assert inspection["selected_spec_raw"]["info"]["title"] == spec["info"]["title"]
+    assert repo_inspection["detected_frameworks"] == []
+
+
+def test_github_repo_analyzer_extracts_routes_from_framework_code(monkeypatch):
+    fastapi_source = """
+from fastapi import FastAPI, APIRouter
+
+app = FastAPI()
+router = APIRouter(prefix="/admin/system")
+
+@app.get("/health")
+async def health():
+    return {"ok": True}
+
+@router.delete("/users/{user_id}")
+async def delete_user(user_id: str):
+    return {"deleted": user_id}
+"""
+    flask_source = """
+from flask import Flask
+
+app = Flask(__name__)
+
+@app.route("/system/secrets/<secret_id>", methods=["PATCH"])
+def rotate_secret(secret_id):
+    return {"secret": secret_id}
+"""
+
+    def fake_fetch_json(url: str):
+        if url.endswith("/repos/acme/framework-demo"):
+            return {
+                "name": "framework-demo",
+                "full_name": "acme/framework-demo",
+                "html_url": "https://github.com/acme/framework-demo",
+                "description": "Repo without OpenAPI docs but with API frameworks",
+                "default_branch": "main",
+                "stargazers_count": 2,
+                "watchers_count": 2,
+                "forks_count": 0,
+                "visibility": "public",
+            }
+        if url.endswith("/languages"):
+            return {"Python": 2500}
+        if "git/trees/main" in url:
+            return {
+                "tree": [
+                    {"path": "backend/app.py", "type": "blob", "size": 350},
+                    {"path": "backend/admin.py", "type": "blob", "size": 280},
+                    {"path": "README.md", "type": "blob", "size": 200},
+                ]
+            }
+        raise AssertionError(f"Unexpected JSON URL: {url}")
+
+    def fake_fetch_text(url: str):
+        if url.endswith("/backend/app.py"):
+            return fastapi_source
+        if url.endswith("/backend/admin.py"):
+            return flask_source
+        raise AssertionError(f"Unexpected text URL: {url}")
+
+    monkeypatch.setattr(GitHubRepoAnalyzer, "_fetch_json", staticmethod(fake_fetch_json))
+    monkeypatch.setattr(GitHubRepoAnalyzer, "_fetch_text", staticmethod(fake_fetch_text))
+
+    inspection = GitHubRepoAnalyzer.inspect_repo("https://github.com/acme/framework-demo")
+
+    repo_inspection = inspection["repo_inspection"]
+    api_manifest = inspection["api_manifest"]
+
+    assert repo_inspection["selected_source_kind"] == "code"
+    assert repo_inspection["selected_spec"]["path"] == "[source-code]"
+    assert repo_inspection["code_route_count"] == 3
+    assert {item["framework"] for item in repo_inspection["detected_frameworks"]} == {"FastAPI", "Flask"}
+    assert api_manifest["api_catalog"]["source_kind"] == "code"
+    assert api_manifest["api_catalog"]["code_analysis"]["summary"]["route_count"] == 3
+    assert "/admin/system/users/{user_id}" in inspection["selected_spec_raw"]["paths"]
+    assert inspection["selected_spec_raw"]["paths"]["/admin/system/users/{user_id}"]["delete"]["x-sentinel-source"]["type"] == "code"
 
 
 def test_report_generator_surfaces_high_risk_operations_and_errors():

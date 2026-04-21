@@ -132,6 +132,13 @@ export interface RepoSpecCandidate {
   openapi_version?: string | null;
   errors?: string[];
   candidate_score?: number;
+  source_kind?: "openapi" | "code";
+}
+
+export interface RepoFrameworkDetection {
+  framework: string;
+  files: string[];
+  route_count: number;
 }
 
 export interface RepoInspection {
@@ -150,6 +157,9 @@ export interface RepoInspection {
   languages: RepoLanguage[];
   file_formats: RepoFileFormat[];
   total_files: number;
+  detected_frameworks: RepoFrameworkDetection[];
+  code_route_count: number;
+  selected_source_kind: "openapi" | "code";
   candidate_specs: RepoSpecCandidate[];
   selected_spec?: RepoSpecCandidate;
   approval_required: boolean;
@@ -172,6 +182,14 @@ export interface ApiCatalogOperation {
   risk_level: string;
   risk_factors: Array<{ name?: string; weight?: number; description?: string }>;
   risk_explanation?: string | null;
+}
+
+export interface CodeExtractedRoute {
+  framework: string;
+  method: string;
+  path: string;
+  source_file: string;
+  handler_name?: string | null;
 }
 
 export interface ApiManifest {
@@ -198,6 +216,7 @@ export interface ApiManifest {
     total_files: number;
   };
   api_catalog: {
+    source_kind: "openapi" | "code";
     selected_spec?: RepoSpecCandidate;
     candidate_specs: RepoSpecCandidate[];
     spec_info: {
@@ -210,6 +229,14 @@ export interface ApiManifest {
       total_operations: number;
       destructive_operations: number;
       high_risk_operations: number;
+    };
+    code_analysis?: {
+      frameworks: RepoFrameworkDetection[];
+      routes: CodeExtractedRoute[];
+      summary: {
+        framework_count: number;
+        route_count: number;
+      };
     };
     operations: ApiCatalogOperation[];
   };
