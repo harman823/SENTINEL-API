@@ -1,0 +1,72 @@
+openapi: "3.0.0"
+info:
+  title: "Highest Risk Control Plane API"
+  version: "9.9.9"
+security:
+  - bearerAuth: []
+paths:
+  /admin/system/users/{userId}:
+    delete:
+      summary: "Delete a privileged user"
+      description: "High-risk destructive admin endpoint."
+      operationId: "deletePrivilegedUser"
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: "Deleted"
+  /system/secrets/{secretId}:
+    patch:
+      summary: "Rotate a system secret"
+      description: "Mutates internal credentials and exposes sensitive request bodies."
+      operationId: "rotateSystemSecret"
+      parameters:
+        - name: secretId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                password:
+                  type: string
+                token:
+                  type: string
+                credit_card:
+                  type: object
+                  properties:
+                    card_number:
+                      type: string
+                    cvv:
+                      type: string
+                credentials:
+                  type: object
+                  properties:
+                    api_key:
+                      type: string
+                    secret:
+                      type: string
+      responses:
+        "200":
+          description: "Rotated"
+  /public/health:
+    get:
+      summary: "Health check"
+      operationId: "healthcheck"
+      responses:
+        "200":
+          description: "Healthy"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer

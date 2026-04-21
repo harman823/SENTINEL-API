@@ -84,6 +84,15 @@ class ReportGenerator:
             for item in validation_results
             if item.get("test_id")
         }
+        operation_index = {
+            f"{op.path}.{op.method}": op
+            for op in (spec_normalized.operations if spec_normalized else [])
+        }
+        policy_index = {
+            item.get("operation_key"): item
+            for item in policy_results
+            if item.get("operation_key")
+        }
 
         test_results = []
         for test_case in test_cases:
@@ -112,6 +121,33 @@ class ReportGenerator:
             risk_details=risk_details,
         )
 
+        high_risk_operations = []
+        for operation_key, detail in sorted(
+            risk_details.items(),
+            key=lambda item: item[1].get("score", 0),
+            reverse=True,
+        ):
+            score = detail.get("score", 0)
+            if score < 0.6:
+                continue
+            op = operation_index.get(operation_key)
+            policy = policy_index.get(operation_key, {})
+            high_risk_operations.append(
+                {
+                    "operation_key": operation_key,
+                    "method": op.method.upper() if op else None,
+                    "path": op.path if op else None,
+                    "summary": op.summary if op else None,
+                    "is_destructive": op.is_destructive if op else False,
+                    "risk_score": score,
+                    "risk_level": detail.get("level"),
+                    "risk_explanation": detail.get("explanation"),
+                    "risk_factors": detail.get("factors", []),
+                    "requires_approval": policy.get("requires_approval", False),
+                    "violated_rules": policy.get("violated_rules", []),
+                }
+            )
+
         report: Dict[str, Any] = {
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "platform_version": "2.1.0",
@@ -135,6 +171,13 @@ class ReportGenerator:
             },
             "risk_distribution": {"high": high_risk, "medium": medium_risk, "low": low_risk},
             "risk_details": risk_details,
+            "risk_summary": {
+                "high_risk_operations": high_risk_operations,
+                "highest_risk_score": max(
+                    (detail.get("score", 0) for detail in risk_details.values()),
+                    default=0,
+                ),
+            },
             "lint_summary": {
                 "total_issues": len(lint_results),
                 "errors": lint_errors,
@@ -196,6 +239,7 @@ class ReportGenerator:
             "breaking_change_predictions": breaking_change_predictions,
             "iac_validation": iac_validation,
             "errors": errors,
+            "error_details": [{"message": message, "severity": "error"} for message in errors],
         }
 
         report["safe_to_ship"] = SafeToShipGate.evaluate(report, environment=environment)

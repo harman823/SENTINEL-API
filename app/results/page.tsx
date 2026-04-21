@@ -5,7 +5,6 @@ import Link from "next/link";
 import SentinelLoader from "@/components/SentinelLoader";
 import {
     ArrowLeft,
-    Download,
     CheckCircle2,
     XCircle,
     AlertTriangle,
@@ -28,6 +27,10 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { TimeTravelDebugger } from "@/components/TimeTravelDebugger";
 import { BlastRadiusGraph } from "@/components/BlastRadiusGraph";
+import { ReportDownloadMenu } from "@/components/ReportDownloadMenu";
+import { RepoInspectionPanel } from "@/components/RepoInspectionPanel";
+import { HighRiskOperationsPanel } from "@/components/HighRiskOperationsPanel";
+import type { ApiManifest, RepoInspection } from "@/lib/sentinel-types";
 
 /* ─── Types matching report.json ─── */
 interface Assertion {
@@ -94,6 +97,22 @@ interface Report {
         errors: number;
     };
     risk_distribution: { high: number; medium: number; low: number };
+    risk_summary?: {
+        highest_risk_score: number;
+        high_risk_operations: Array<{
+            operation_key: string;
+            method?: string | null;
+            path?: string | null;
+            summary?: string | null;
+            is_destructive: boolean;
+            risk_score: number;
+            risk_level?: string | null;
+            risk_explanation?: string | null;
+            risk_factors?: Array<{ name?: string; weight?: number; description?: string }>;
+            requires_approval?: boolean;
+            violated_rules?: string[];
+        }>;
+    };
     policy_results: PolicyResult[];
     test_results: TestResult[];
     chaos_summary?: {
@@ -121,6 +140,7 @@ interface Report {
     compliance_scorecard?: { overall_compliance_health: number };
     breaking_change_summary?: { total_predictions: number; likely_breaking: number };
     errors: string[];
+    error_details?: Array<{ message: string; severity: string }>;
 }
 
 /* ─── Demo data (used when no report passed via state) ─── */
@@ -272,6 +292,8 @@ function insightStatusLabel(status: "active" | "partial" | "idle") {
 /* ─── Component ─── */
 export default function ResultsPage() {
     const [report, setReport] = useState<Report | null>(null);
+    const [repoInspection, setRepoInspection] = useState<RepoInspection | null>(null);
+    const [apiManifest, setApiManifest] = useState<ApiManifest | null>(null);
     const [executionHistory, setExecutionHistory] = useState<any[]>([]);
     const [blastRadius, setBlastRadius] = useState<any>(null);
     const [expandedTests, setExpandedTests] = useState<Set<string>>(new Set());
@@ -280,14 +302,34 @@ export default function ResultsPage() {
         // Try to load report from sessionStorage (set by /drop)
         const stored = sessionStorage.getItem("autoapi_report");
         const storedResponse = sessionStorage.getItem("autoapi_response");
+        const storedRepoInspection = sessionStorage.getItem("autoapi_repo_inspection");
+        const storedApiManifest = sessionStorage.getItem("autoapi_api_manifest");
 
         if (storedResponse) {
             try {
                 const resp = JSON.parse(storedResponse);
                 setExecutionHistory(resp.execution_history || []);
                 setBlastRadius(resp.blast_radius || null);
+                setRepoInspection(resp.repo_inspection || null);
+                setApiManifest(resp.api_manifest || null);
             } catch (e) {
                 console.error("Failed to parse stored response");
+            }
+        }
+
+        if (storedRepoInspection) {
+            try {
+                setRepoInspection(JSON.parse(storedRepoInspection));
+            } catch {
+                setRepoInspection(null);
+            }
+        }
+
+        if (storedApiManifest) {
+            try {
+                setApiManifest(JSON.parse(storedApiManifest));
+            } catch {
+                setApiManifest(null);
             }
         }
 
@@ -309,19 +351,6 @@ export default function ResultsPage() {
             else next.add(id);
             return next;
         });
-    };
-
-    const handleDownload = () => {
-        if (!report) return;
-        const blob = new Blob([JSON.stringify(report, null, 2)], {
-            type: "application/json",
-        });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `autoapi-report-${new Date().toISOString().slice(0, 10)}.json`;
-        a.click();
-        URL.revokeObjectURL(url);
     };
 
     if (!report) {
@@ -499,14 +528,11 @@ export default function ResultsPage() {
                     <SentinelLoader size={24} />
                     <span><span className="text-emerald-400">SENTINEL</span>-API</span>
                 </span>
-                <Button
-                    onClick={handleDownload}
-                    variant="outline"
-                    className="gap-2 border-zinc-700 hover:border-emerald-500/50 text-zinc-300 hover:text-white"
-                >
-                    <Download className="size-4" />
-                    Download Report
-                </Button>
+                <ReportDownloadMenu
+                    report={report}
+                    repoInspection={repoInspection}
+                    apiManifest={apiManifest}
+                />
             </nav>
 
             <main className="max-w-7xl mx-auto px-6 pb-20">
@@ -523,6 +549,12 @@ export default function ResultsPage() {
                         {spec_info.total_operations} operations analyzed
                     </p>
                 </div>
+
+                {repoInspection && (
+                    <div className="mb-8 animate-fadeIn">
+                        <RepoInspectionPanel repoInspection={repoInspection} apiManifest={apiManifest} />
+                    </div>
+                )}
 
                 {/* ─── Summary Cards ─── */}
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8 animate-fadeIn">
@@ -656,6 +688,10 @@ export default function ResultsPage() {
                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-8 animate-fadeIn">
                     <TimeTravelDebugger history={executionHistory} />
                     <BlastRadiusGraph data={blastRadius} />
+                </div>
+
+                <div className="mb-8 animate-fadeIn">
+                    <HighRiskOperationsPanel report={report} apiManifest={apiManifest} />
                 </div>
 
                 {/* Detailed Insights */}
@@ -931,13 +967,11 @@ export default function ResultsPage() {
 
                 {/* ─── Download CTA ─── */}
                 <div className="flex justify-center mt-10 gap-4">
-                    <Button
-                        onClick={handleDownload}
-                        className="h-12 px-10 rounded-xl bg-emerald-500 text-black font-semibold text-base hover:bg-emerald-400 transition-all hover:scale-105 shadow-lg shadow-emerald-500/25 gap-2"
-                    >
-                        <Download className="size-5" />
-                        Download Full Report
-                    </Button>
+                    <ReportDownloadMenu
+                        report={report}
+                        repoInspection={repoInspection}
+                        apiManifest={apiManifest}
+                    />
                     <Link href="/drop">
                         <Button
                             variant="outline"

@@ -71,11 +71,28 @@ class PipelineResponse(BaseModel):
     report: Optional[Dict[str, Any]] = None
     execution_history: List[Dict[str, Any]] = Field(default_factory=list)
     blast_radius: Optional[Dict[str, Any]] = None
+    repo_inspection: Optional[Dict[str, Any]] = None
+    api_manifest: Optional[Dict[str, Any]] = None
+    errors: List[str] = Field(default_factory=list)
+
+
+class GitHubInspectRequest(BaseModel):
+    url: str
+    selected_path: Optional[str] = None
+
+
+class GitHubInspectResponse(BaseModel):
+    success: bool
+    repo_inspection: Optional[Dict[str, Any]] = None
+    api_manifest: Optional[Dict[str, Any]] = None
+    approval_required: bool = False
+    approval_prompt: str = ""
     errors: List[str] = Field(default_factory=list)
 
 
 class GitHubRunRequest(BaseModel):
     url: str
+    selected_path: Optional[str] = None
     approve: bool = False
     live: bool = False
 
@@ -238,12 +255,34 @@ async def upload_spec(file: UploadFile = File(...), approve: bool = False, live:
 
 @app.post("/api/v1/github-run", response_model=PipelineResponse)
 async def github_run(request: GitHubRunRequest):
-    from backend.app.services.openapi_loader import OpenAPILoader
+    from backend.app.services.github_repo_analyzer import GitHubRepoAnalyzer
 
     try:
-        spec_raw = OpenAPILoader.load_spec(request.url)
-        return await run_pipeline(
+        inspection = GitHubRepoAnalyzer.inspect_repo(request.url, selected_path=request.selected_path)
+        spec_raw = inspection["selected_spec_raw"]
+        response = await run_pipeline(
             RunPipelineRequest(spec_raw=spec_raw, approve=request.approve, live=request.live)
+        )
+        response.repo_inspection = inspection["repo_inspection"]
+        response.api_manifest = inspection["api_manifest"]
+        return response
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@app.post("/api/v1/github-inspect", response_model=GitHubInspectResponse)
+async def github_inspect(request: GitHubInspectRequest):
+    from backend.app.services.github_repo_analyzer import GitHubRepoAnalyzer
+
+    try:
+        inspection = GitHubRepoAnalyzer.inspect_repo(request.url, selected_path=request.selected_path)
+        repo_inspection = inspection["repo_inspection"]
+        return GitHubInspectResponse(
+            success=True,
+            repo_inspection=repo_inspection,
+            api_manifest=inspection["api_manifest"],
+            approval_required=bool(repo_inspection.get("approval_required", False)),
+            approval_prompt=repo_inspection.get("approval_prompt", ""),
         )
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc))
