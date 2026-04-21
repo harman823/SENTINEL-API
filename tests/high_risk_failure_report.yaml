@@ -1,0 +1,106 @@
+openapi: "3.0.0"
+info:
+  title: "Failure Heavy Risk API"
+  version: "1.2.0"
+security:
+  - bearerAuth: []
+paths:
+  /admin/system/users/{userId}:
+    delete:
+      summary: "Delete privileged user"
+      description: "Destructive admin endpoint expected to be high risk."
+      operationId: "deletePrivilegedUser"
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: "Deleted"
+        "403":
+          description: "Forbidden"
+  /system/secrets/{secretId}:
+    patch:
+      summary: "Rotate production secret"
+      description: "Mutates highly sensitive credentials and should score as critical risk."
+      operationId: "rotateProdSecret"
+      parameters:
+        - name: secretId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                password:
+                  type: string
+                token:
+                  type: string
+                credentials:
+                  type: object
+                  properties:
+                    api_key:
+                      type: string
+                    secret:
+                      type: string
+                credit_card:
+                  type: object
+                  properties:
+                    card_number:
+                      type: string
+                    cvv:
+                      type: string
+      responses:
+        "200":
+          description: "Rotated"
+        "500":
+          description: "Unexpected failure"
+  /internal/admin/config:
+    put:
+      summary: "Replace internal config"
+      description: "High-risk internal config rewrite."
+      operationId: "replaceInternalConfig"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                secret:
+                  type: string
+                password:
+                  type: string
+                settings:
+                  type: object
+                  properties:
+                    token:
+                      type: string
+                    api_key:
+                      type: string
+      responses:
+        "200":
+          description: "Updated"
+        "400":
+          description: "Invalid payload"
+  /public/health:
+    get:
+      summary: "Health check"
+      operationId: "healthCheck"
+      responses:
+        "200":
+          description: "Healthy"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
