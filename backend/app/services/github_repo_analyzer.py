@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import re
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
@@ -106,7 +107,10 @@ class GitHubRepoAnalyzer:
     def _list_extensions(cls, file_paths: List[str]) -> List[Dict[str, Any]]:
         counts: Dict[str, int] = {}
         for path in file_paths:
+            filename = path.rsplit("/", 1)[-1]
             ext = cls._extension(path) or "[no extension]"
+            if filename.startswith(".") and filename.count(".") == 1:
+                ext = "[dotfile]"
             counts[ext] = counts.get(ext, 0) + 1
         ranked = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
         return [{"extension": ext, "count": count} for ext, count in ranked[:15]]
@@ -130,8 +134,10 @@ class GitHubRepoAnalyzer:
         score = 0
         if requested_path and path == requested_path:
             score += 100
+
+        tokens = set(token for token in re.split(r"[/._-]+", lower) if token)
         for hint in SPEC_HINTS:
-            if hint in lower:
+            if hint in tokens:
                 score += 20
         if lower.endswith(".yaml") or lower.endswith(".yml"):
             score += 8
@@ -152,12 +158,15 @@ class GitHubRepoAnalyzer:
             ext = cls._extension(path)
             if ext not in SPEC_EXTENSIONS:
                 continue
+            score = cls._candidate_score(path, requested_path)
+            if score < 20 and path != requested_path:
+                continue
             ranked.append(
                 {
                     "path": path,
                     "size": entry.get("size", 0),
                     "format": ext.lstrip("."),
-                    "score": cls._candidate_score(path, requested_path),
+                    "score": score,
                 }
             )
         ranked.sort(key=lambda item: (-item["score"], item["path"]))

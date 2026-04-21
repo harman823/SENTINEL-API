@@ -63,6 +63,7 @@ def test_github_repo_analyzer_builds_repo_manifest(monkeypatch):
     assert repo_inspection["full_name"] == "acme/security-demo"
     assert repo_inspection["selected_spec"]["path"] == "api/openapi.yaml"
     assert repo_inspection["approval_required"] is True
+    assert [item["path"] for item in repo_inspection["candidate_specs"]] == ["api/openapi.yaml"]
     assert api_manifest["api_catalog"]["summary"]["high_risk_operations"] >= 2
     assert api_manifest["api_catalog"]["operations"][0]["risk_score"] >= 0.6
     assert inspection["selected_spec_raw"]["info"]["title"] == spec["info"]["title"]

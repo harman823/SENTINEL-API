@@ -23,7 +23,7 @@ export function RepoInspectionPanel({
           Repository Intake
         </CardTitle>
         <CardDescription className="text-zinc-500">
-          Repo-level metadata, detected formats, frameworks, and the API source used for analysis
+          Repo-level metadata, detected formats, frameworks, and the active API source used for analysis
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
@@ -111,7 +111,10 @@ export function RepoInspectionPanel({
               File Formats
             </div>
             <div className="flex flex-wrap gap-2">
-              {repoInspection.file_formats.slice(0, 8).map((item) => (
+              {repoInspection.file_formats
+                .filter((item) => item.extension !== "[dotfile]")
+                .slice(0, 8)
+                .map((item) => (
                 <Badge key={item.extension} variant="outline" className="border-zinc-700 bg-zinc-900/70 text-zinc-300">
                   {item.extension} x{item.count}
                 </Badge>

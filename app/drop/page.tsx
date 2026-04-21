@@ -382,6 +382,12 @@ export default function DropPage() {
 
   const readyCount = files.filter((file) => file.status === "ready").length;
   const repoOperations = apiManifest?.api_catalog.operations ?? [];
+  const openApiCandidates =
+    repoInspection?.candidate_specs.filter(
+      (candidate) => candidate.parseable || (candidate.candidate_score ?? 0) >= 20
+    ) ?? [];
+  const isCodeDerivedRepo = repoInspection?.selected_source_kind === "code";
+  const extractedRoutes = apiManifest?.api_catalog.code_analysis?.routes ?? [];
 
   return (
     <div className="min-h-screen bg-black text-white">
@@ -414,7 +420,7 @@ export default function DropPage() {
           </h1>
           <p className="mx-auto max-w-3xl text-lg text-zinc-400">
             Upload a spec directly or inspect a GitHub repository. Repo intake now reads the whole project,
-            builds an API manifest, shows languages and file formats, and waits for approval before report generation.
+            builds an API manifest, detects framework routes from code, shows languages and file formats, and waits for approval before report generation.
           </p>
         </div>
 
@@ -513,7 +519,7 @@ export default function DropPage() {
                       <Loader2 className="size-5 animate-spin" /> Analyzing...
                     </>
                   ) : (
-                    <>Analyze {readyCount} File{readyCount > 1 ? "s" : ""} →</>
+                    <>Analyze {readyCount} File{readyCount > 1 ? "s" : ""} -&gt;</>
                   )}
                 </Button>
               </div>
@@ -577,7 +583,7 @@ export default function DropPage() {
 
                 {repoInspection && (
                   <div className="space-y-5 rounded-2xl border border-zinc-800 bg-black/40 p-5">
-                    <div className="grid gap-4 lg:grid-cols-[1fr_0.95fr]">
+                    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(320px,360px)]">
                       <div>
                         <p className="text-xs font-mono uppercase tracking-[0.28em] text-zinc-500">repo summary</p>
                         <h3 className="mt-2 text-2xl font-semibold text-zinc-100">{repoInspection.full_name}</h3>
@@ -617,7 +623,7 @@ export default function DropPage() {
                         </div>
                         <div className="mt-4 flex flex-wrap gap-2">
                           <Badge variant="outline" className="border-zinc-700 bg-zinc-900/70 text-zinc-300">
-                            Source {repoInspection.selected_source_kind === "code" ? "Code" : "OpenAPI"}
+                            Source {repoInspection.selected_source_kind === "code" ? "Code-Derived" : "OpenAPI"}
                           </Badge>
                           {repoInspection.detected_frameworks.map((item) => (
                             <Badge key={item.framework} variant="outline" className="border-amber-500/30 bg-amber-500/10 text-amber-200">
@@ -630,14 +636,37 @@ export default function DropPage() {
 
                     <div className="grid gap-5 lg:grid-cols-2">
                       <div>
-                        <p className="mb-3 text-xs font-mono uppercase tracking-[0.28em] text-zinc-500">discovered api files</p>
+                        <p className="mb-3 text-xs font-mono uppercase tracking-[0.28em] text-zinc-500">
+                          {isCodeDerivedRepo ? "detected framework files" : "openapi candidates"}
+                        </p>
                         <div className="space-y-2">
-                          {repoInspection.candidate_specs.length === 0 && (
+                          {!isCodeDerivedRepo && openApiCandidates.length === 0 && (
                             <div className="rounded-xl border border-zinc-800 bg-zinc-950/70 px-4 py-4 text-sm text-zinc-500">
-                              No OpenAPI YAML/JSON file was selected. Sentinel will use framework code extraction for this repo.
+                              No strong OpenAPI candidate was found. Sentinel will keep using framework code extraction if you continue with this repo.
                             </div>
                           )}
-                          {repoInspection.candidate_specs.map((candidate) => {
+                          {isCodeDerivedRepo &&
+                            repoInspection.detected_frameworks.map((framework) => (
+                              <div
+                                key={framework.framework}
+                                className="rounded-xl border border-zinc-800 bg-zinc-950/70 px-4 py-3"
+                              >
+                                <div className="flex items-center justify-between gap-3">
+                                  <p className="truncate font-mono text-sm text-zinc-200">{framework.framework}</p>
+                                  <Badge
+                                    variant="outline"
+                                    className="border-amber-500/30 bg-amber-500/10 text-amber-200"
+                                  >
+                                    {framework.route_count} routes
+                                  </Badge>
+                                </div>
+                                <p className="mt-2 text-xs text-zinc-500">
+                                  {framework.files.slice(0, 2).join(", ")}
+                                  {framework.files.length > 2 ? ` +${framework.files.length - 2} more` : ""}
+                                </p>
+                              </div>
+                            ))}
+                          {!isCodeDerivedRepo && openApiCandidates.map((candidate) => {
                             const active = selectedSpecPath === candidate.path;
                             return (
                               <button
@@ -678,7 +707,10 @@ export default function DropPage() {
                         <p className="mb-3 text-xs font-mono uppercase tracking-[0.28em] text-zinc-500">manifest preview</p>
                         <div className="rounded-2xl border border-zinc-800 bg-zinc-950/80 p-4">
                           <div className="mb-4 flex flex-wrap gap-2">
-                            {repoInspection.file_formats.slice(0, 8).map((item) => (
+                            {repoInspection.file_formats
+                              .filter((item) => item.extension !== "[dotfile]")
+                              .slice(0, 8)
+                              .map((item) => (
                               <Badge key={item.extension} variant="outline" className="border-zinc-700 bg-zinc-900/70 text-zinc-300">
                                 {item.extension} x{item.count}
                               </Badge>
@@ -692,6 +724,30 @@ export default function DropPage() {
                                   <Badge key={item.framework} variant="outline" className="border-amber-500/30 bg-amber-500/10 text-amber-200">
                                     {item.framework} {item.route_count} routes
                                   </Badge>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          {isCodeDerivedRepo && extractedRoutes.length > 0 && (
+                            <div className="mb-4 rounded-xl border border-zinc-800 bg-black/40 p-3">
+                              <p className="mb-2 text-xs font-mono uppercase tracking-[0.22em] text-zinc-500">sample extracted routes</p>
+                              <div className="space-y-2">
+                                {extractedRoutes.slice(0, 3).map((route) => (
+                                  <div
+                                    key={`${route.framework}-${route.method}-${route.path}`}
+                                    className="rounded-lg border border-zinc-800 bg-zinc-950/70 px-3 py-2"
+                                  >
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <Badge variant="outline" className="border-zinc-700 text-zinc-200">
+                                        {route.method}
+                                      </Badge>
+                                      <Badge variant="outline" className="border-amber-500/30 bg-amber-500/10 text-amber-200">
+                                        {route.framework}
+                                      </Badge>
+                                    </div>
+                                    <p className="mt-2 font-mono text-sm text-zinc-100">{route.path}</p>
+                                    <p className="mt-1 text-xs text-zinc-500">{route.source_file}</p>
+                                  </div>
                                 ))}
                               </div>
                             </div>
