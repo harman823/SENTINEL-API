@@ -14,7 +14,6 @@ import {
     ChevronDown,
     ChevronUp,
     BarChart3,
-    Activity,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -705,40 +704,7 @@ export default function ResultsPage() {
                 )}
 
                 {/* ─── Summary Cards ─── */}
-                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8 animate-fadeIn">
-                    {/* Pass Rate */}
-                    <Card className="border-zinc-800 bg-zinc-900/60 backdrop-blur-md">
-                        <CardContent className="pt-6">
-                            <div className="flex items-center gap-3 mb-2">
-                                <div className="size-10 rounded-xl bg-emerald-500/10 flex items-center justify-center">
-                                    <Activity className="size-5 text-emerald-400" />
-                                </div>
-                                <p className="text-sm text-zinc-400">Pass Rate</p>
-                            </div>
-                            <p
-                                className={`text-3xl font-bold ${passRate >= 80
-                                    ? "text-emerald-400"
-                                    : passRate >= 50
-                                        ? "text-amber-400"
-                                        : "text-red-400"
-                                    }`}
-                            >
-                                {passRate.toFixed(1)}%
-                            </p>
-                            {/* Mini bar */}
-                            <div className="mt-2 h-1.5 w-full rounded-full bg-zinc-800">
-                                <div
-                                    className={`h-full rounded-full transition-all ${passRate >= 80
-                                        ? "bg-emerald-400"
-                                        : passRate >= 50
-                                            ? "bg-amber-400"
-                                            : "bg-red-400"
-                                        }`}
-                                    style={{ width: `${passRate}%` }}
-                                />
-                            </div>
-                        </CardContent>
-                    </Card>
+                <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-8 animate-fadeIn">
 
                     {/* Total Tests */}
                     <Card className="border-zinc-800 bg-zinc-900/60 backdrop-blur-md">
