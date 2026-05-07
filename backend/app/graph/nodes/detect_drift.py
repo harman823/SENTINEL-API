@@ -1,5 +1,6 @@
 from typing import Dict, Any
 from backend.app.services.drift_detector import DriftDetector
+from backend.app.services.mock_server import DynamicMockRouteRegistry
 from backend.app.graph.state import GraphState
 
 
@@ -25,10 +26,21 @@ def detect_drift_node(state: GraphState) -> Dict[str, Any]:
             spec_normalized, test_cases, execution_results
         )
         drift_results = [dr.model_dump() for dr in drift_reports]
+        dynamic_mock_routes, mock_notifications = DynamicMockRouteRegistry.provision_for_drift(
+            spec_normalized,
+            state.get("spec_raw", {}),
+            drift_results,
+        )
 
-        return {"drift_results": drift_results}
+        return {
+            "drift_results": drift_results,
+            "dynamic_mock_routes": dynamic_mock_routes,
+            "mock_notifications": mock_notifications,
+        }
     except Exception as e:
         return {
             "drift_results": [],
+            "dynamic_mock_routes": [],
+            "mock_notifications": [],
             "errors": (state.get("errors") or []) + [f"Drift detection failed: {str(e)}"],
         }

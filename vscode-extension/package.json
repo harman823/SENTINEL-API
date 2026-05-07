@@ -1,7 +1,7 @@
 {
     "name": "autoapi-vscode",
     "displayName": "AutoAPI Intelligence",
-    "description": "Run AutoAPI Intelligence directly from VS Code",
+    "description": "Run Sentinel API analysis, live contract linting, and one-click OpenAPI fixes from VS Code-compatible editors.",
     "version": "0.1.0",
     "engines": {
         "vscode": "^1.80.0"
@@ -9,15 +9,50 @@
     "categories": [
         "Other"
     ],
-    "activationEvents": [],
+    "activationEvents": [
+        "onLanguage:python",
+        "onLanguage:javascript",
+        "onLanguage:typescript",
+        "onCommand:autoapi.runAnalysis",
+        "onCommand:sentinel.applyOpenApiQuickFix"
+    ],
     "main": "./out/extension.js",
+    "extensionKind": [
+        "workspace"
+    ],
     "contributes": {
         "commands": [
             {
                 "command": "autoapi.runAnalysis",
                 "title": "AutoAPI: Run Analysis on Current File"
             }
-        ]
+        ],
+        "configuration": {
+            "title": "Sentinel API",
+            "properties": {
+                "sentinel.specPath": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Path to the OpenAPI YAML/JSON spec. Relative paths are resolved from the workspace root."
+                },
+                "sentinel.pythonPath": {
+                    "type": "string",
+                    "default": "python",
+                    "description": "Python executable used to run the Sentinel CLI."
+                },
+                "sentinel.liveLint.enabled": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Enable live API contract diagnostics for backend source files."
+                },
+                "sentinel.liveLint.debounceMs": {
+                    "type": "number",
+                    "default": 650,
+                    "minimum": 100,
+                    "description": "Delay in milliseconds before live linting runs after an editor change."
+                }
+            }
+        }
     },
     "scripts": {
         "vscode:prepublish": "npm run compile",

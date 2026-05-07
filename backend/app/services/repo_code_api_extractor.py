@@ -22,6 +22,8 @@ FRAMEWORK_NAMES = {
     "django": "Django",
     "express": "Express",
     "fastify": "Fastify",
+    "bottle": "Bottle",
+    "sanic": "Sanic",
 }
 HTTP_METHODS = {"get", "post", "put", "patch", "delete", "options", "head"}
 PRIORITY_FILE_HINTS = ("api", "app", "main", "server", "route", "router", "view", "endpoint", "controller")
@@ -147,7 +149,7 @@ class RepoCodeApiExtractor:
                 target_name = node.targets[0].id
                 if isinstance(node.value, ast.Call):
                     callee = cls._callee_name(node.value.func)
-                    if callee in {"FastAPI", "Flask", "APIRouter", "Blueprint", "Starlette"}:
+                    if callee in {"FastAPI", "Flask", "APIRouter", "Blueprint", "Starlette", "Bottle", "Sanic"}:
                         prefix = ""
                         for keyword in node.value.keywords:
                             if keyword.arg in {"prefix", "url_prefix"}:
@@ -158,6 +160,20 @@ class RepoCodeApiExtractor:
                         }
                 if target_name == "urlpatterns" and isinstance(node.value, (ast.List, ast.Tuple)):
                     urlpatterns = list(node.value.elts)
+
+            if isinstance(node, ast.Expr) and isinstance(node.value, ast.Call):
+                call = node.value
+                if isinstance(call.func, ast.Attribute) and call.func.attr in {"register_blueprint", "include_router"}:
+                    if call.args and isinstance(call.args[0], ast.Name):
+                        router_name = call.args[0].id
+                        router_meta = object_meta.get(router_name)
+                        if router_meta:
+                            for keyword in call.keywords:
+                                if keyword.arg in {"url_prefix", "prefix"}:
+                                    router_meta["prefix"] = cls._join_paths(
+                                        router_meta.get("prefix", ""),
+                                        cls._string_value(keyword.value) or "",
+                                    )
 
         routes: List[Dict[str, Any]] = []
 
@@ -206,6 +222,8 @@ class RepoCodeApiExtractor:
                         "Flask": "Flask",
                         "Blueprint": "Flask",
                         "Starlette": "Starlette",
+                        "Bottle": "Bottle",
+                        "Sanic": "Sanic",
                     }.get(owner_meta["kind"], owner_meta["kind"])
 
                     frameworks.add(framework_name)
@@ -217,6 +235,7 @@ class RepoCodeApiExtractor:
                                 "path": full_path,
                                 "source_file": path,
                                 "handler_name": node.name,
+                                "summary": ast.get_docstring(node),
                             }
                         )
 
@@ -252,13 +271,47 @@ class RepoCodeApiExtractor:
             frameworks.add("Express")
         if "fastify" in lower:
             frameworks.add("Fastify")
+        if "koa" in lower:
+            frameworks.add("Koa")
+        if "hono" in lower:
+            frameworks.add("Hono")
+        if "@nestjs" in lower:
+            frameworks.add("NestJS")
 
         router_prefixes: Dict[str, str] = {}
+        framework_objects: Dict[str, str] = {}
+
+        for match in re.finditer(r"""\b(?:const|let|var)\s+(?P<object>[A-Za-z_$][\w$]*)\s*=\s*(?:require\(['"`]express['"`]\)|express\(\))""", content):
+            framework_objects[match.group("object")] = "Express"
+            frameworks.add("Express")
+        for match in re.finditer(r"""\b(?:const|let|var)\s+(?P<object>[A-Za-z_$][\w$]*)\s*=\s*(?:require\(['"`]fastify['"`]\)|fastify)\s*\(""", content):
+            framework_objects[match.group("object")] = "Fastify"
+            frameworks.add("Fastify")
+        for match in re.finditer(r"""\b(?:const|let|var)\s+(?P<router>[A-Za-z_$][\w$]*)\s*=\s*express\.Router\(""", content):
+            framework_objects[match.group("router")] = "Express"
+            frameworks.add("Express")
+
         for match in re.finditer(
             r"""\b(?:app|server|api|router)\.use\(\s*['"`](?P<prefix>[^'"`]+)['"`]\s*,\s*(?P<router>[A-Za-z_$][\w$]*)\s*\)""",
             content,
         ):
             router_prefixes[match.group("router")] = cls._normalize_route_path(match.group("prefix"))
+
+        # NestJS decorators
+        nest_pattern = re.compile(
+            r"""@(?P<method>Get|Post|Put|Patch|Delete|Options|Head)\(\s*['"`](?P<path>[^'"`]+)['"`]\s*\)""",
+            re.IGNORECASE,
+        )
+        for match in nest_pattern.finditer(content):
+            routes.append(
+                {
+                    "framework": "NestJS",
+                    "method": match.group("method").upper(),
+                    "path": cls._normalize_route_path(match.group("path")),
+                    "source_file": path,
+                    "handler_name": None,
+                }
+            )
 
         route_pattern = re.compile(
             r"""\b(?P<object>[A-Za-z_$][\w$]*)\.(?P<method>get|post|put|patch|delete|options|head)\(\s*['"`](?P<path>[^'"`]+)['"`]""",
@@ -268,7 +321,16 @@ class RepoCodeApiExtractor:
             object_name = match.group("object")
             route_path = cls._normalize_route_path(match.group("path"))
             full_path = cls._join_paths(router_prefixes.get(object_name, ""), route_path)
-            framework = "Fastify" if "fastify" in lower and object_name.lower() in {"fastify", "server"} else "Express"
+            framework = framework_objects.get(object_name)
+            if not framework:
+                if "fastify" in lower and object_name.lower() in {"fastify", "server"}:
+                    framework = "Fastify"
+                elif "koa" in lower and object_name.lower() in {"app", "router"}:
+                    framework = "Koa"
+                elif "hono" in lower and object_name.lower() in {"app", "hono"}:
+                    framework = "Hono"
+                else:
+                    framework = "Express"
             routes.append(
                 {
                     "framework": framework,
@@ -278,6 +340,27 @@ class RepoCodeApiExtractor:
                     "handler_name": None,
                 }
             )
+
+        fastify_route_pattern = re.compile(
+            r"""\b(?P<object>[A-Za-z_$][\w$]*)\.route\(\s*\{(?P<body>.*?)\}\s*\)""",
+            re.IGNORECASE | re.DOTALL,
+        )
+        for match in fastify_route_pattern.finditer(content):
+            body = match.group("body")
+            method_match = re.search(r"""\bmethod\s*:\s*['"`](?P<method>[A-Za-z]+)['"`]""", body)
+            path_match = re.search(r"""\b(?:url|path)\s*:\s*['"`](?P<path>[^'"`]+)['"`]""", body)
+            if not method_match or not path_match:
+                continue
+            routes.append(
+                {
+                    "framework": "Fastify",
+                    "method": method_match.group("method").upper(),
+                    "path": cls._normalize_route_path(path_match.group("path")),
+                    "source_file": path,
+                    "handler_name": None,
+                }
+            )
+            frameworks.add("Fastify")
 
         return sorted(frameworks), routes
 
@@ -315,6 +398,11 @@ class RepoCodeApiExtractor:
         for route in all_routes:
             key = (route["framework"], route["method"], route["path"])
             deduped_routes.setdefault(key, route)
+
+        for item in frameworks.values():
+            item["routes"] = 0
+        for route in deduped_routes.values():
+            frameworks[route["framework"]]["routes"] += 1
 
         framework_list = [
             {
@@ -358,10 +446,11 @@ class RepoCodeApiExtractor:
             handler_name = route.get("handler_name")
             framework_name = route["framework"]
             operation_id = handler_name or f"{method}_{path.strip('/').replace('/', '_').replace('{', '').replace('}', '') or 'root'}"
+            route_summary = route.get("summary")
 
             paths.setdefault(path, {})[method] = {
                 "summary": handler_name or f"{framework_name} inferred route",
-                "description": f"Code-inferred endpoint extracted from {route['source_file']} via {framework_name}.",
+                "description": route_summary or f"Code-inferred endpoint extracted from {route['source_file']} via {framework_name}.",
                 "operationId": operation_id,
                 "responses": {
                     "200": {"description": "Successful response (inferred from source code)"}

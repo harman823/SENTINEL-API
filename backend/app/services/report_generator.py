@@ -31,8 +31,12 @@ class ReportGenerator:
         security_test_cases: Optional[List[Dict[str, Any]]] = None,
         security_results: Optional[List[Dict[str, Any]]] = None,
         drift_results: Optional[List[Dict[str, Any]]] = None,
+        dynamic_mock_routes: Optional[List[Dict[str, Any]]] = None,
+        mock_notifications: Optional[List[Dict[str, Any]]] = None,
         compliance_mappings: Optional[List[Dict[str, Any]]] = None,
         remediation_results: Optional[List[Dict[str, Any]]] = None,
+        remediation_patch: Optional[Dict[str, Any]] = None,
+        suggested_diff: Optional[str] = None,
         pr_remediation_suggestions: Optional[List[Dict[str, Any]]] = None,
         chaos_results: Optional[List[Dict[str, Any]]] = None,
         rca_results: Optional[List[Dict[str, Any]]] = None,
@@ -44,6 +48,8 @@ class ReportGenerator:
         security_test_cases = security_test_cases or []
         security_results = security_results or []
         drift_results = drift_results or []
+        dynamic_mock_routes = dynamic_mock_routes or []
+        mock_notifications = mock_notifications or []
         compliance_mappings = compliance_mappings or []
         remediation_results = remediation_results or []
         pr_remediation_suggestions = pr_remediation_suggestions or []
@@ -205,11 +211,19 @@ class ReportGenerator:
                 "endpoints_with_drift": len(drift_results),
             },
             "drift_results": drift_results,
+            "dynamic_mock_summary": {
+                "active_routes": len(dynamic_mock_routes),
+                "notifications": len(mock_notifications),
+            },
+            "dynamic_mock_routes": dynamic_mock_routes,
+            "mock_notifications": mock_notifications,
             "remediation_summary": {
                 "total_remediations": len(remediation_results),
                 "total_pr_suggestions": len(pr_remediation_suggestions),
             },
             "remediation_results": remediation_results,
+            "remediation_patch": remediation_patch,
+            "suggested_diff": suggested_diff,
             "pr_remediation_suggestions": pr_remediation_suggestions,
             "compliance_summary": {
                 "total_mappings": len(compliance_mappings),

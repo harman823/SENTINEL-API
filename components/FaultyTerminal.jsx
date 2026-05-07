@@ -249,7 +249,7 @@ export default function FaultyTerminal({
   const frozenTimeRef = useRef(0);
   const rafRef = useRef(0);
   const loadAnimationStartRef = useRef(0);
-  const timeOffsetRef = useRef(Math.random() * 100);
+  const timeOffsetRef = useRef(0);
 
   const tintVec = useMemo(() => hexToRgb(tint), [tint]);
 
@@ -258,6 +258,7 @@ export default function FaultyTerminal({
   const handleMouseMove = useCallback(e => {
     const ctn = containerRef.current;
     if (!ctn) return;
+    timeOffsetRef.current = Math.random() * 100;
     const rect = ctn.getBoundingClientRect();
     const x = (e.clientX - rect.left) / rect.width;
     const y = 1 - (e.clientY - rect.top) / rect.height;

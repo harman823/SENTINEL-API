@@ -1,5 +1,6 @@
 from typing import Dict, Any, List, Set
 from backend.app.schemas.spec import NormalizedSpec, Operation
+from backend.app.services.api_spec_compat import ApiSpecCompat
 
 
 # Common PII field names for auto-detection
@@ -105,6 +106,7 @@ class SpecNormalizer:
         Convert raw dict spec into a NormalizedSpec object.
         Now enriched with PII detection, schema complexity, and security schemes.
         """
+        spec = ApiSpecCompat.to_openapi3(spec)
         openapi_version = spec.get("openapi", "3.0.0")
         info = spec.get("info", {})
         paths = spec.get("paths", {})

@@ -27,6 +27,9 @@ async def get_db():
         yield session
 
 async def init_db():
+    from backend.app.models.policy import ApiPolicy  # noqa: F401
+    from backend.app.models.user import User  # noqa: F401
+
     async with engine.begin() as conn:
         # Create all tables (in a real app, use Alembic for migrations)
         await conn.run_sync(Base.metadata.create_all)

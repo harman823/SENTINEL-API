@@ -130,6 +130,8 @@ export interface RepoSpecCandidate {
   version?: string | null;
   total_operations: number;
   openapi_version?: string | null;
+  source_format?: string | null;
+  source_version?: string | null;
   errors?: string[];
   candidate_score?: number;
   source_kind?: "openapi" | "code";

@@ -32,6 +32,17 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import type { ApiManifest, RepoInspection } from "@/lib/sentinel-types";
 
+type PipelineResponsePayload = {
+  report?: unknown;
+  repo_inspection?: RepoInspection;
+  api_manifest?: ApiManifest;
+  errors?: string[];
+};
+
+function messageFromError(err: unknown, fallback: string) {
+  return err instanceof Error ? err.message : fallback;
+}
+
 interface UploadedFile {
   id: string;
   file: File;
@@ -284,14 +295,14 @@ export default function DropPage() {
       setRepoInspection(data.repo_inspection || null);
       setApiManifest(data.api_manifest || null);
       setSelectedSpecPath(data.repo_inspection?.selected_spec?.path || "");
-    } catch (err: any) {
-      setError(err.message || "Repository inspection failed.");
+    } catch (err: unknown) {
+      setError(messageFromError(err, "Repository inspection failed."));
     } finally {
       setIsInspecting(false);
     }
   };
 
-  const persistResult = (data: any) => {
+  const persistResult = (data: PipelineResponsePayload) => {
     sessionStorage.setItem("autoapi_report", JSON.stringify(data.report));
     sessionStorage.setItem("autoapi_response", JSON.stringify(data));
 
@@ -371,8 +382,8 @@ export default function DropPage() {
 
       persistResult(data);
       setApiDone(true);
-    } catch (err: any) {
-      finishPipelineWithError(err.message || "An error occurred during analysis.");
+    } catch (err: unknown) {
+      finishPipelineWithError(messageFromError(err, "An error occurred during analysis."));
     }
   };
 
@@ -382,11 +393,12 @@ export default function DropPage() {
 
   const readyCount = files.filter((file) => file.status === "ready").length;
   const repoOperations = apiManifest?.api_catalog.operations ?? [];
+  const isCodeDerivedRepo = repoInspection?.selected_source_kind === "code";
   const openApiCandidates =
     repoInspection?.candidate_specs.filter(
-      (candidate) => candidate.parseable || (candidate.candidate_score ?? 0) >= 20
+      (candidate) =>
+        candidate.parseable || (!isCodeDerivedRepo && (candidate.candidate_score ?? 0) >= 20)
     ) ?? [];
-  const isCodeDerivedRepo = repoInspection?.selected_source_kind === "code";
   const extractedRoutes = apiManifest?.api_catalog.code_analysis?.routes ?? [];
 
   return (
@@ -695,7 +707,7 @@ export default function DropPage() {
                                 <p className="mt-2 text-xs text-zinc-500">
                                   {candidate.parseable
                                     ? `${candidate.title || "Unknown"} v${candidate.version || "?"}`
-                                    : candidate.errors?.[0] || "Not parseable as OpenAPI 3.x"}
+                                    : candidate.errors?.[0] || "Not parseable as supported API docs"}
                                 </p>
                               </button>
                             );

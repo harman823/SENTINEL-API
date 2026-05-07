@@ -44,7 +44,11 @@ class GraphState(TypedDict):
 
     # Drift + remediation
     drift_results: List[Dict[str, Any]]
+    dynamic_mock_routes: List[Dict[str, Any]]
+    mock_notifications: List[Dict[str, Any]]
     remediation_results: List[Dict[str, Any]]
+    remediation_patch: Optional[Dict[str, Any]]
+    suggested_diff: Optional[str]
     pr_remediation_suggestions: List[Dict[str, Any]]
 
     # Compliance

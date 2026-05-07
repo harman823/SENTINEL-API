@@ -32,6 +32,26 @@ import { RepoInspectionPanel } from "@/components/RepoInspectionPanel";
 import { HighRiskOperationsPanel } from "@/components/HighRiskOperationsPanel";
 import type { ApiManifest, RepoInspection } from "@/lib/sentinel-types";
 
+interface ExecutionHistoryStep {
+    step: number;
+    action: string;
+    timestamp: string;
+    details: string;
+}
+
+interface BlastRadiusData {
+    blast_radius_by_schema?: Record<string, string[]>;
+    nodes?: Array<{ id: string; label: string; type: string }>;
+    edges?: Array<{ source: string; target: string; type: string }>;
+}
+
+interface StoredPipelineResponse {
+    execution_history?: ExecutionHistoryStep[];
+    blast_radius?: BlastRadiusData | null;
+    repo_inspection?: RepoInspection | null;
+    api_manifest?: ApiManifest | null;
+}
+
 /* ─── Types matching report.json ─── */
 interface Assertion {
     type: string;
@@ -417,8 +437,8 @@ export default function ResultsPage() {
     const [report, setReport] = useState<Report | null>(null);
     const [repoInspection, setRepoInspection] = useState<RepoInspection | null>(null);
     const [apiManifest, setApiManifest] = useState<ApiManifest | null>(null);
-    const [executionHistory, setExecutionHistory] = useState<any[]>([]);
-    const [blastRadius, setBlastRadius] = useState<any>(null);
+    const [executionHistory, setExecutionHistory] = useState<ExecutionHistoryStep[]>([]);
+    const [blastRadius, setBlastRadius] = useState<BlastRadiusData | null>(null);
     const [expandedTests, setExpandedTests] = useState<Set<string>>(new Set());
 
     useEffect(() => {
@@ -430,40 +450,45 @@ export default function ResultsPage() {
 
         if (storedResponse) {
             try {
-                const resp = JSON.parse(storedResponse);
-                setExecutionHistory(resp.execution_history || []);
-                setBlastRadius(resp.blast_radius || null);
-                setRepoInspection(resp.repo_inspection || null);
-                setApiManifest(resp.api_manifest || null);
-            } catch (e) {
+                const resp = JSON.parse(storedResponse) as StoredPipelineResponse;
+                queueMicrotask(() => {
+                    setExecutionHistory(resp.execution_history || []);
+                    setBlastRadius(resp.blast_radius || null);
+                    setRepoInspection(resp.repo_inspection || null);
+                    setApiManifest(resp.api_manifest || null);
+                });
+            } catch {
                 console.error("Failed to parse stored response");
             }
         }
 
         if (storedRepoInspection) {
             try {
-                setRepoInspection(JSON.parse(storedRepoInspection));
+                const parsedRepoInspection = JSON.parse(storedRepoInspection) as RepoInspection;
+                queueMicrotask(() => setRepoInspection(parsedRepoInspection));
             } catch {
-                setRepoInspection(null);
+                queueMicrotask(() => setRepoInspection(null));
             }
         }
 
         if (storedApiManifest) {
             try {
-                setApiManifest(JSON.parse(storedApiManifest));
+                const parsedApiManifest = JSON.parse(storedApiManifest) as ApiManifest;
+                queueMicrotask(() => setApiManifest(parsedApiManifest));
             } catch {
-                setApiManifest(null);
+                queueMicrotask(() => setApiManifest(null));
             }
         }
 
         if (stored) {
             try {
-                setReport(JSON.parse(stored));
+                const parsedReport = JSON.parse(stored) as Report;
+                queueMicrotask(() => setReport(parsedReport));
             } catch {
-                setReport(DEMO_REPORT);
+                queueMicrotask(() => setReport(DEMO_REPORT));
             }
         } else {
-            setReport(DEMO_REPORT);
+            queueMicrotask(() => setReport(DEMO_REPORT));
         }
     }, []);
 

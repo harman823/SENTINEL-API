@@ -1,5 +1,7 @@
 from typing import Dict, Any
 
+from backend.app.services.api_spec_compat import ApiSpecCompat
+
 class SpecValidator:
     @staticmethod
     def validate(spec: Dict[str, Any]) -> None:
@@ -7,10 +9,16 @@ class SpecValidator:
         Strictly validate the OpenAPI spec structure.
         Raises ValueError if invalid.
         """
-        # 1. Check OpenAPI version
-        version = spec.get('openapi', '')
-        if not version.startswith('3.'):
-            raise ValueError(f"Unsupported OpenAPI version: {version}. Only 3.x is supported.")
+        # 1. Check supported API documentation versions.
+        version_info = ApiSpecCompat.detect_format(spec)
+        kind = version_info.get("kind")
+        version = version_info.get("version") or ""
+        if kind == "swagger" and version == "2.0":
+            spec = ApiSpecCompat.to_openapi3(spec)
+        elif kind == "openapi-like":
+            spec = ApiSpecCompat.to_openapi3(spec)
+        elif kind != "openapi" or not version.startswith("3."):
+            raise ValueError(ApiSpecCompat.unsupported_message(spec))
 
         # 2. Check required top-level fields
         if 'info' not in spec:

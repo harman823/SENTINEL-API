@@ -16,6 +16,8 @@ import {
   IconReport,
   IconSearch,
   IconSettings,
+  IconShieldCheck,
+  IconFlask,
   IconUsers,
 } from "@tabler/icons-react"
 
@@ -54,6 +56,16 @@ const data = {
       title: "Analytics",
       url: "#",
       icon: IconChartBar,
+    },
+    {
+      title: "Policies",
+      url: "/policies",
+      icon: IconShieldCheck,
+    },
+    {
+      title: "Sandbox",
+      url: "/sandbox",
+      icon: IconFlask,
     },
     {
       title: "Projects",

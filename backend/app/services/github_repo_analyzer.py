@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 
 import httpx
 
+from backend.app.services.api_spec_compat import ApiSpecCompat
 from backend.app.services.openapi_loader import OpenAPILoader
 from backend.app.services.repo_code_api_extractor import RepoCodeApiExtractor
 from backend.app.services.risk_scorer import RiskScorer
@@ -18,7 +19,16 @@ from backend.app.services.spec_validator import SpecValidator
 GITHUB_API_BASE = "https://api.github.com"
 RAW_GITHUB_BASE = "https://raw.githubusercontent.com"
 SPEC_EXTENSIONS = {".json", ".yaml", ".yml"}
-SPEC_HINTS = ("openapi", "swagger", "api", "spec")
+SPEC_HINTS = ("openapi", "swagger", "api", "spec", "contract")
+SPEC_EXCLUDED_FILENAMES = {
+    "package.json",
+    "package-lock.json",
+    "tsconfig.json",
+    "jsconfig.json",
+    "composer.json",
+    "manifest.json",
+    "schema.json",
+}
 MAX_SOURCE_FILE_SIZE = 200_000
 
 
@@ -143,6 +153,8 @@ class GitHubRepoAnalyzer:
             score += 8
         if "/docs/" in lower or lower.startswith("docs/"):
             score += 4
+        if lower.rsplit("/", 1)[-1] in SPEC_EXCLUDED_FILENAMES:
+            score -= 40
         return score
 
     @classmethod
@@ -199,18 +211,22 @@ class GitHubRepoAnalyzer:
             else:
                 spec_raw = OpenAPILoader._parse_yaml(content)
 
-            SpecValidator.validate(spec_raw)
-            normalized = SpecNormalizer.normalize(spec_raw)
+            compatible_spec = ApiSpecCompat.to_openapi3(spec_raw)
+            SpecValidator.validate(compatible_spec)
+            normalized = SpecNormalizer.normalize(compatible_spec)
+            source_format = ApiSpecCompat.detect_format(spec_raw)
             candidate_meta.update(
                 {
                     "parseable": True,
                     "title": normalized.info.get("title", "Unknown"),
                     "version": normalized.info.get("version", "Unknown"),
                     "total_operations": len(normalized.operations),
-                    "openapi_version": spec_raw.get("openapi"),
+                    "openapi_version": compatible_spec.get("openapi"),
+                    "source_format": source_format.get("kind"),
+                    "source_version": source_format.get("version"),
                 }
             )
-            return spec_raw, candidate_meta
+            return compatible_spec, candidate_meta
         except Exception as exc:
             candidate_meta["errors"] = [str(exc)]
             return None, candidate_meta
@@ -366,7 +382,7 @@ class GitHubRepoAnalyzer:
         else:
             raise ValueError(
                 "No valid OpenAPI file or supported framework routes were found in this repository. "
-                "Sentinel currently extracts APIs from OpenAPI specs and common framework code such as FastAPI, Flask, Django, Express, and Fastify."
+                "Sentinel currently extracts APIs from OpenAPI specs and common framework code such as FastAPI, Flask, Django, Express, Fastify, Koa, Hono, NestJS, Bottle, and Sanic."
             )
 
         api_inventory = cls._build_api_inventory(selected_spec_raw)

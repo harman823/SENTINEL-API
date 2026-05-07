@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Network, AlertCircle, Maximize2 } from 'lucide-react';
+import { Network, AlertCircle } from 'lucide-react';
 
 interface BlastRadiusData {
     blast_radius_by_schema?: Record<string, string[]>;

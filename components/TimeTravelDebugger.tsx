@@ -26,8 +26,6 @@ export function TimeTravelDebugger({ history }: TimeTravelDebuggerProps) {
             timer = setTimeout(() => {
                 setCurrentStep((prev) => prev + 1);
             }, 1200); // 1.2 second per step
-        } else if (currentStep >= history.length) {
-            setIsPlaying(false);
         }
         return () => clearTimeout(timer);
     }, [isPlaying, currentStep, history.length]);

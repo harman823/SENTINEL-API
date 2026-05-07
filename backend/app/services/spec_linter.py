@@ -5,6 +5,7 @@ Detects common spec issues before the pipeline runs.
 
 from typing import Dict, Any, List, Set
 from backend.app.schemas.models import LintIssue, LintSeverity
+from backend.app.services.api_spec_compat import ApiSpecCompat
 
 
 # HTTP methods that should have response definitions
@@ -23,6 +24,7 @@ class SpecLinter:
     @staticmethod
     def lint(spec: Dict[str, Any]) -> List[LintIssue]:
         """Run all lint rules and return issues."""
+        spec = ApiSpecCompat.to_openapi3(spec)
         issues: List[LintIssue] = []
         issues.extend(SpecLinter._check_info(spec))
         issues.extend(SpecLinter._check_paths(spec))

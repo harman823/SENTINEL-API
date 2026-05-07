@@ -7,6 +7,7 @@ from rich import box
 import sys
 import os
 import json
+import yaml
 
 # Add project root to path to allow imports from backend
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -50,7 +51,11 @@ def _build_initial_state(spec_raw, approve=False, env="dev", policy_config=None)
         "validation_results": [],
         "rca_results": [],
         "drift_results": [],
+        "dynamic_mock_routes": [],
+        "mock_notifications": [],
         "remediation_results": [],
+        "remediation_patch": None,
+        "suggested_diff": None,
         "pr_remediation_suggestions": [],
         "compliance_mappings": [],
         "policy_results": [],
@@ -129,6 +134,63 @@ def lint(
         console.print(f"\n  Total: {len(issues)} issues ({errors} errors, {warns} warnings)")
 
     except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(code=1)
+
+
+@app.command("live-lint")
+def live_lint(
+    source_path: str = typer.Argument(..., help="Backend source file to lint."),
+    spec_path: str = typer.Option(..., "--spec", "-s", help="OpenAPI YAML/JSON spec file."),
+    ci: bool = typer.Option(False, "--ci", help="Emit machine-readable JSON only."),
+):
+    """Lint an edited source file against the OpenAPI response contract."""
+    try:
+        from backend.app.services.live_contract_linter import LiveContractLinter
+
+        spec_raw = OpenAPILoader.load_spec(spec_path)
+        result = LiveContractLinter.lint_file(source_path, spec_raw)
+        if ci:
+            print(json.dumps(result, indent=2))
+            return
+
+        diagnostics = result.get("diagnostics", [])
+        if not diagnostics:
+            console.print("[green]No live contract issues found.[/green]")
+            return
+        for diagnostic in diagnostics:
+            console.print(
+                f"[red]{diagnostic.get('line', 1)}[/red] "
+                f"{diagnostic.get('endpoint', '')}: {diagnostic.get('message', '')}"
+            )
+    except Exception as e:
+        if ci:
+            print(json.dumps({"diagnostics": [], "count": 0, "errors": [str(e)]}, indent=2))
+            raise typer.Exit(code=1)
+        console.print(f"[red]Error:[/red] {e}")
+        raise typer.Exit(code=1)
+
+
+@app.command("apply-spec-fix")
+def apply_spec_fix(
+    spec_path: str = typer.Option(..., "--spec", "-s", help="OpenAPI YAML/JSON spec file."),
+    patch_json: str = typer.Option(..., "--patch-json", help="Remediation patch JSON."),
+    ci: bool = typer.Option(False, "--ci", help="Emit machine-readable JSON only."),
+):
+    """Apply a Sentinel remediation patch to an OpenAPI spec."""
+    try:
+        from backend.app.services.live_contract_linter import LiveContractLinter
+
+        patch = json.loads(patch_json)
+        result = LiveContractLinter.apply_spec_patch(spec_path, patch)
+        if ci:
+            print(json.dumps(result, indent=2))
+            return
+        console.print(f"[green]Applied {result['operations']} OpenAPI update(s) to {spec_path}[/green]")
+    except Exception as e:
+        if ci:
+            print(json.dumps({"success": False, "error": str(e)}, indent=2))
+            raise typer.Exit(code=1)
         console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(code=1)
 
@@ -259,6 +321,8 @@ def run_graph(
 
         # ── Drift Detection ──
         _display_drift_results(result.get("drift_results", []))
+        _display_dynamic_mocks(result.get("dynamic_mock_routes", []), result.get("mock_notifications", []))
+        _handle_one_click_fixes(result, spec_path)
 
         # ── Compliance Mapping ──
         _display_compliance(result.get("compliance_mappings", []))
@@ -413,6 +477,72 @@ def _display_drift_results(drift_results):
         console.print(f"    [dim]Expected: {dr.get('expected', '?')}  Actual: {dr.get('actual', '?')}[/dim]")
         if dr.get("field"):
             console.print(f"    [dim]Field: {dr['field']}[/dim]")
+
+
+def _display_dynamic_mocks(dynamic_mock_routes, mock_notifications):
+    if not dynamic_mock_routes and not mock_notifications:
+        return
+    console.print(f"\n[bold]Dynamic Mocks: {len(dynamic_mock_routes)} active route(s)[/bold]")
+    for notification in mock_notifications:
+        console.print(f"  [yellow]⚠[/yellow] {notification.get('message', '')}")
+        if notification.get("mock_url"):
+            console.print(f"    [dim]Mock URL: {notification['mock_url']}[/dim]")
+
+
+def _handle_one_click_fixes(result, spec_path):
+    remediation_results = result.get("remediation_results", [])
+    remediation_patch = result.get("remediation_patch")
+    if not remediation_results:
+        return
+
+    console.print(f"\n[bold]One-Click Fixes: {len(remediation_results)} remediation(s) generated[/bold]")
+    for remediation in remediation_results:
+        endpoint = remediation.get("endpoint", "?")
+        status = remediation.get("status", "unknown")
+        console.print(f"  [cyan]{endpoint}[/cyan]  [dim]{status}[/dim]")
+        for hint in remediation.get("remediation_patch", {}).get("code_hints", []):
+            console.print(f"    [yellow]Code fix:[/yellow] {hint.get('suggestion', '')}")
+
+    suggested_diff = result.get("suggested_diff")
+    if suggested_diff:
+        console.print(Panel(suggested_diff[:4000], title="Suggested OpenAPI Diff", border_style="cyan"))
+
+    if not remediation_patch or not remediation_patch.get("operations"):
+        console.print("[yellow]No local OpenAPI patch is applyable for this drift set.[/yellow]")
+        return
+
+    choice = console.input(
+        f"Drift detected. Fix generated for [cyan]{len(remediation_patch['operations'])}[/cyan] OpenAPI change(s). "
+        "Press [bold]y[/bold] to apply locally, [bold]p[/bold] to open a PR, or any other key to skip: "
+    ).strip().lower()
+
+    if choice == "y":
+        _apply_remediation_patch_to_file(spec_path, remediation_patch)
+        console.print(f"[green]Applied remediation patch to {spec_path}[/green]")
+        return
+
+    if choice == "p":
+        suggestions = result.get("pr_remediation_suggestions", [])
+        if not suggestions:
+            console.print("[yellow]No PR payload was generated.[/yellow]")
+            return
+        suggestion = suggestions[0]
+        console.print(Panel(suggestion.get("body", ""), title=suggestion.get("title", "Remediation PR")))
+        console.print(f"[cyan]Branch:[/cyan] {suggestion.get('branch')}")
+        console.print("[yellow]PR creation requires a connected git remote/GitHub token; use this payload with your GitHub workflow.[/yellow]")
+
+
+def _apply_remediation_patch_to_file(spec_path, remediation_patch):
+    from backend.app.services.pr_remediation_bot import DriftRemediationPatchBuilder
+
+    spec_raw = OpenAPILoader.load_spec(spec_path)
+    updated = DriftRemediationPatchBuilder.apply_to_spec(spec_raw, remediation_patch)
+    with open(spec_path, "w", encoding="utf-8") as spec_file:
+        if spec_path.lower().endswith(".json"):
+            json.dump(updated, spec_file, indent=2)
+            spec_file.write("\n")
+        else:
+            yaml.safe_dump(updated, spec_file, sort_keys=False)
 
 
 def _display_compliance(compliance_mappings):

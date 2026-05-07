@@ -120,6 +120,12 @@ class IntelligentMockServer:
             logger.warning(f"AI mock generation failed: {e}")
             return {"id": obj_id, "mock_fallback": True}
 
+def create_intelligent_mock_app(spec_raw: Dict[str, Any]) -> FastAPI:
+    normalized = SpecNormalizer.normalize(spec_raw)
+    server = IntelligentMockServer(normalized)
+    return server.app
+
+
 def run_intelligent_mock(spec_path: str, port: int = 8080):
     spec_raw = OpenAPILoader.load_spec(spec_path)
     normalized = SpecNormalizer.normalize(spec_raw)

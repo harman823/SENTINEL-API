@@ -1,5 +1,6 @@
 import os
 import sys
+from pathlib import Path
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -7,6 +8,12 @@ from backend.app.services.breaking_change_predictor import BreakingChangePredict
 from backend.app.services.chaos_resilience import ChaosResilienceTester
 from backend.app.services.iac_validator import IaCValidator
 from backend.app.services.pr_remediation_bot import PRRemediationBot
+from backend.app.services.pr_remediation_bot import DriftRemediationPatchBuilder
+from backend.app.services.live_contract_linter import LiveContractLinter
+from backend.app.services.mock_server import DynamicMockRouteRegistry
+from backend.app.services.policy_engine import PolicyEngine
+from fastapi.testclient import TestClient
+from backend.app.main import app
 from backend.app.services.root_cause_analyst import RootCauseAnalyst
 from backend.app.services.safe_to_ship_gate import SafeToShipGate
 from backend.app.services.semantic_traffic_replay import SemanticTrafficReplay
@@ -154,6 +161,236 @@ def test_pr_remediation_bot_builds_pr_payload():
     assert len(suggestions) == 1
     assert suggestions[0]["ready_for_pr"] is True
     assert suggestions[0]["files"][0]["path"] == "openapi.yaml"
+
+
+def test_drift_remediation_builder_creates_applyable_openapi_patch():
+    spec = {
+        "openapi": "3.0.0",
+        "info": {"title": "Users API", "version": "1.0"},
+        "paths": {
+            "/users": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "description": "ok",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {"id": {"type": "integer"}},
+                                    }
+                                }
+                            },
+                        }
+                    }
+                }
+            }
+        },
+    }
+    drift_results = [
+        {
+            "endpoint": "GET /users",
+            "test_id": "t1",
+            "drifts": [
+                {
+                    "drift_type": "extra_field",
+                    "field_path": "response.email",
+                    "expected": "not defined in schema",
+                    "actual": "present with value type str",
+                    "message": "extra field",
+                }
+            ],
+            "is_breaking": False,
+        }
+    ]
+
+    remediations, patch, diff = DriftRemediationPatchBuilder.build(
+        spec,
+        drift_results,
+        test_cases=[{"id": "t1", "expected_status": 200}],
+        execution_results=[{"test_id": "t1", "status_code": 200}],
+    )
+
+    assert remediations[0]["status"] == "patch_ready"
+    assert patch is not None
+    assert diff and "+                  email:" in diff
+    updated = DriftRemediationPatchBuilder.apply_to_spec(spec, patch)
+    properties = updated["paths"]["/users"]["get"]["responses"]["200"]["content"]["application/json"]["schema"]["properties"]
+    assert properties["email"]["type"] == "string"
+
+
+def test_live_contract_linter_flags_extra_response_field():
+    source = Path(__file__).resolve().parent / "_sentinel_live_lint_test_api.py"
+    source.write_text(
+        "\n".join(
+            [
+                "from fastapi import FastAPI",
+                "app = FastAPI()",
+                "",
+                "@app.get('/users')",
+                "def users():",
+                "    return {'id': 1, 'email': 'a@example.com'}",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    spec = {
+        "openapi": "3.0.0",
+        "info": {"title": "Users API", "version": "1.0"},
+        "paths": {
+            "/users": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "description": "ok",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {"id": {"type": "integer"}},
+                                    }
+                                }
+                            },
+                        }
+                    }
+                }
+            }
+        },
+    }
+
+    result = LiveContractLinter.lint_file(str(source), spec)
+
+    assert result["count"] == 1
+    diagnostic = result["diagnostics"][0]
+    assert diagnostic["code"] == "sentinel.extra_response_field"
+    assert diagnostic["field"] == "email"
+    assert diagnostic["remediation_patch"]["operations"][0]["path"].endswith("/properties/email")
+    source.unlink(missing_ok=True)
+
+
+def test_dynamic_mock_registry_provisions_breaking_drift_route():
+    DynamicMockRouteRegistry.clear()
+    spec = {
+        "openapi": "3.0.0",
+        "info": {"title": "Users API", "version": "1.0"},
+        "paths": {
+            "/users": {
+                "get": {
+                    "responses": {
+                        "200": {
+                            "description": "ok",
+                            "content": {
+                                "application/json": {
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "id": {"type": "integer"},
+                                            "name": {"type": "string"},
+                                        },
+                                    }
+                                }
+                            },
+                        }
+                    }
+                }
+            }
+        },
+    }
+    normalized = SpecNormalizer.normalize(spec)
+    drift_results = [
+        {
+            "endpoint": "GET /users",
+            "test_id": "t1",
+            "drifts": [
+                {
+                    "drift_type": "status_code_mismatch",
+                    "field_path": "status_code",
+                    "expected": "one of [200]",
+                    "actual": "500",
+                    "message": "broken endpoint",
+                }
+            ],
+            "is_breaking": True,
+        }
+    ]
+
+    routes, notifications = DynamicMockRouteRegistry.provision_for_drift(normalized, spec, drift_results)
+
+    assert len(routes) == 1
+    assert routes[0]["mock_url"] == "/api/v1/dynamic-mock/users"
+    assert routes[0]["body"]["name"]
+    assert "Traffic is being dynamically mocked" in notifications[0]["message"]
+    assert DynamicMockRouteRegistry.resolve("GET", "/users") is not None
+    DynamicMockRouteRegistry.clear()
+
+
+def test_policy_engine_uses_database_style_required_header_rule():
+    spec = {
+        "openapi": "3.0.0",
+        "info": {"title": "Policy API", "version": "1.0"},
+        "paths": {
+            "/users": {
+                "get": {
+                    "operationId": "getUsers",
+                    "responses": {"200": {"description": "ok"}},
+                }
+            }
+        },
+    }
+    normalized = SpecNormalizer.normalize(spec)
+    engine = PolicyEngine(
+        policy_config={
+            "policies": {
+                "request_id_required": {
+                    "rule_type": "required_header",
+                    "header": "x-request-id",
+                    "message": "Every endpoint must require x-request-id.",
+                }
+            }
+        },
+        include_database_policies=False,
+    )
+
+    results = engine.evaluate(normalized.operations, {})
+
+    assert results[0].requires_approval is True
+    assert "policy:request_id_required" in results[0].violated_rules
+
+
+def test_chaos_sandbox_stream_emits_summary():
+    spec = {
+        "openapi": "3.0.0",
+        "info": {"title": "Sandbox API", "version": "1.0"},
+        "paths": {
+            "/api/v1/orders": {
+                "get": {
+                    "operationId": "getOrders",
+                    "responses": {
+                        "200": {"description": "ok"},
+                        "503": {"description": "unavailable"},
+                    },
+                }
+            }
+        },
+    }
+    with TestClient(app) as client:
+        with client.stream(
+            "POST",
+            "/api/v1/sandbox/stream",
+            json={
+                "spec_raw": spec,
+                "target_method": "GET",
+                "target_path": "/api/v1/orders",
+                "fault_rate": 1,
+                "malformed_payload_types": ["empty_body"],
+            },
+        ) as response:
+            assert response.status_code == 200
+            body = "".join(response.iter_text())
+
+    assert "event: replay" in body
+    assert "event: chaos" in body
+    assert "event: summary" in body
 
 
 def test_graph_builder_compilation_is_cached():

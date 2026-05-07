@@ -5,7 +5,7 @@ Creates realistic, type-aware fake data for each endpoint based on the
 schema definitions in the OpenAPI specification.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 import random
 import string
 import uuid
@@ -223,3 +223,146 @@ class MockServerGenerator:
         if fmt and fmt in _FORMAT_GENERATORS:
             return _FORMAT_GENERATORS[fmt]()
         return _TYPE_GENERATORS.get(schema_type, lambda: "mock_value")()
+
+
+class DynamicMockRouteRegistry:
+    """
+    In-memory registry for temporary mock routes created during drift detection.
+    The FastAPI app exposes these routes under /api/v1/dynamic-mock/{path}.
+    """
+
+    _routes: Dict[str, Dict[str, Any]] = {}
+    _notifications: List[Dict[str, Any]] = []
+
+    @classmethod
+    def provision_for_drift(
+        cls,
+        spec_normalized: Any,
+        spec_raw: Dict[str, Any],
+        drift_results: List[Dict[str, Any]],
+    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+        mocks = MockServerGenerator.generate(spec_normalized, spec_raw)
+        created: List[Dict[str, Any]] = []
+        notifications: List[Dict[str, Any]] = []
+
+        for drift in drift_results:
+            endpoint = drift.get("endpoint")
+            if not endpoint or not cls._should_mock(drift):
+                continue
+            mock_response = mocks.get(endpoint)
+            if not mock_response:
+                continue
+
+            method, route_path = cls._parse_endpoint(endpoint)
+            route = cls.register(
+                method=method,
+                path=route_path,
+                mock_response=mock_response,
+                reason="contract_drift",
+                source=drift,
+            )
+            notification = cls._notification(route)
+            created.append(route)
+            notifications.append(notification)
+
+        return created, notifications
+
+    @classmethod
+    def provision_endpoint(
+        cls,
+        spec_normalized: Any,
+        spec_raw: Dict[str, Any],
+        method: str,
+        path: str,
+        reason: str = "manual",
+    ) -> Dict[str, Any]:
+        mocks = MockServerGenerator.generate(spec_normalized, spec_raw)
+        endpoint = f"{method.upper()} {path}"
+        mock_response = mocks.get(endpoint)
+        if not mock_response:
+            raise ValueError(f"No mock response could be generated for {endpoint}")
+        return cls.register(method=method, path=path, mock_response=mock_response, reason=reason)
+
+    @classmethod
+    def register(
+        cls,
+        method: str,
+        path: str,
+        mock_response: Dict[str, Any],
+        reason: str,
+        source: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        method = method.upper()
+        path = cls._normalize_route_path(path)
+        key = cls._key(method, path)
+        route = {
+            "id": key,
+            "method": method,
+            "path": path,
+            "mock_url": f"/api/v1/dynamic-mock{path}",
+            "status_code": int(mock_response.get("status_code", 200)),
+            "headers": mock_response.get("headers", {}),
+            "body": mock_response.get("body", {}),
+            "reason": reason,
+            "source": source or {},
+            "active": True,
+        }
+        cls._routes[key] = route
+        notification = cls._notification(route)
+        cls._notifications.append(notification)
+        return route
+
+    @classmethod
+    def resolve(cls, method: str, path: str) -> Optional[Dict[str, Any]]:
+        return cls._routes.get(cls._key(method.upper(), cls._normalize_route_path(path)))
+
+    @classmethod
+    def list_routes(cls) -> List[Dict[str, Any]]:
+        return list(cls._routes.values())
+
+    @classmethod
+    def list_notifications(cls) -> List[Dict[str, Any]]:
+        return list(cls._notifications)
+
+    @classmethod
+    def clear(cls) -> None:
+        cls._routes.clear()
+        cls._notifications.clear()
+
+    @staticmethod
+    def _should_mock(drift: Dict[str, Any]) -> bool:
+        if drift.get("is_breaking"):
+            return True
+        drift_types = {item.get("drift_type") for item in drift.get("drifts", [])}
+        return bool(drift_types & {"status_code_mismatch", "missing_field", "null_unexpected"})
+
+    @staticmethod
+    def _parse_endpoint(endpoint: str) -> Tuple[str, str]:
+        parts = endpoint.split(maxsplit=1)
+        if len(parts) != 2:
+            raise ValueError(f"Invalid endpoint format: {endpoint}")
+        return parts[0].upper(), parts[1]
+
+    @staticmethod
+    def _key(method: str, path: str) -> str:
+        return f"{method.upper()} {path}"
+
+    @staticmethod
+    def _normalize_route_path(path: str) -> str:
+        normalized = path.strip() or "/"
+        if not normalized.startswith("/"):
+            normalized = f"/{normalized}"
+        return normalized
+
+    @staticmethod
+    def _notification(route: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "type": "dynamic_mock_started",
+            "severity": "warning",
+            "endpoint": f"{route['method']} {route['path']}",
+            "mock_url": route["mock_url"],
+            "message": (
+                f"Traffic is being dynamically mocked for {route['method']} {route['path']} "
+                "until the backend is fixed."
+            ),
+        }
