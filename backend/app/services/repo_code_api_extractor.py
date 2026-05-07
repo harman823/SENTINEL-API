@@ -65,7 +65,7 @@ class RepoCodeApiExtractor:
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
             return node.value
         if isinstance(node, ast.Str):
-            return node.s
+            return str(getattr(node, "s", ""))
         return None
 
     @classmethod

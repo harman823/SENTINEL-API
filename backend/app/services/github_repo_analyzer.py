@@ -85,10 +85,10 @@ class GitHubRepoAnalyzer:
         )
 
     @classmethod
-    def _fetch_json(cls, url: str) -> Dict[str, Any]:
+    async def _fetch_json(cls, url: str) -> Dict[str, Any]:
         try:
-            with httpx.Client(follow_redirects=True, timeout=20.0, headers=cls._headers()) as client:
-                response = client.get(url)
+            async with httpx.AsyncClient(follow_redirects=True, timeout=20.0, headers=cls._headers()) as client:
+                response = await client.get(url)
                 response.raise_for_status()
                 return response.json()
         except httpx.HTTPStatusError as exc:
@@ -97,10 +97,10 @@ class GitHubRepoAnalyzer:
             raise ValueError(f"Failed to reach GitHub: {exc}") from exc
 
     @classmethod
-    def _fetch_text(cls, url: str) -> str:
+    async def _fetch_text(cls, url: str) -> str:
         try:
-            with httpx.Client(follow_redirects=True, timeout=20.0, headers=cls._headers()) as client:
-                response = client.get(url)
+            async with httpx.AsyncClient(follow_redirects=True, timeout=20.0, headers=cls._headers()) as client:
+                response = await client.get(url)
                 response.raise_for_status()
                 return response.text
         except httpx.HTTPStatusError as exc:
@@ -185,7 +185,7 @@ class GitHubRepoAnalyzer:
         return ranked[:12]
 
     @classmethod
-    def _parse_spec_candidate(
+    async def _parse_spec_candidate(
         cls,
         parsed_repo: ParsedRepoUrl,
         ref: str,
@@ -204,7 +204,7 @@ class GitHubRepoAnalyzer:
         }
 
         try:
-            content = cls._fetch_text(raw_url)
+            content = await cls._fetch_text(raw_url)
             ext = cls._extension(candidate_path)
             if ext == ".json":
                 spec_raw = OpenAPILoader._parse_json(content)
@@ -305,7 +305,7 @@ class GitHubRepoAnalyzer:
         }
 
     @classmethod
-    def _fetch_source_files(
+    async def _fetch_source_files(
         cls,
         parsed_repo: ParsedRepoUrl,
         ref: str,
@@ -319,46 +319,62 @@ class GitHubRepoAnalyzer:
             and int(entry.get("size", 0) or 0) <= MAX_SOURCE_FILE_SIZE
         ]
         selected_files = RepoCodeApiExtractor.select_source_files(file_paths)
-        contents: Dict[str, str] = {}
-        for path in selected_files:
+        import asyncio
+        async def fetch(path):
             raw_url = f"{RAW_GITHUB_BASE}/{parsed_repo.owner}/{parsed_repo.repo}/{ref}/{path}"
             try:
-                contents[path] = cls._fetch_text(raw_url)
+                return path, await cls._fetch_text(raw_url)
             except Exception:
-                continue
-        return contents
+                return path, None
+
+        results = await asyncio.gather(*(fetch(p) for p in selected_files))
+        return {p: text for p, text in results if text is not None}
 
     @classmethod
-    def inspect_repo(cls, url: str, selected_path: Optional[str] = None) -> Dict[str, Any]:
+    async def inspect_repo(cls, url: str, selected_path: Optional[str] = None) -> Dict[str, Any]:
         parsed_repo = cls._parse_repo_url(url)
 
-        repo_meta = cls._fetch_json(f"{GITHUB_API_BASE}/repos/{parsed_repo.owner}/{parsed_repo.repo}")
+        repo_meta = await cls._fetch_json(f"{GITHUB_API_BASE}/repos/{parsed_repo.owner}/{parsed_repo.repo}")
         default_branch = repo_meta.get("default_branch", "main")
         ref = parsed_repo.ref or default_branch
 
-        tree = cls._fetch_json(
+        tree = await cls._fetch_json(
             f"{GITHUB_API_BASE}/repos/{parsed_repo.owner}/{parsed_repo.repo}/git/trees/{ref}?recursive=1"
         )
         tree_entries = tree.get("tree", [])
         file_paths = [entry.get("path", "") for entry in tree_entries if entry.get("type") == "blob"]
-        language_bytes = cls._fetch_json(f"{GITHUB_API_BASE}/repos/{parsed_repo.owner}/{parsed_repo.repo}/languages")
+        language_bytes = await cls._fetch_json(f"{GITHUB_API_BASE}/repos/{parsed_repo.owner}/{parsed_repo.repo}/languages")
 
         requested_path = selected_path or parsed_repo.path
         candidates = cls._discover_spec_candidates(tree_entries, requested_path)
         parsed_candidates: List[Tuple[Optional[Dict[str, Any]], Dict[str, Any], int]] = []
 
-        for candidate in candidates:
-            spec_raw, candidate_meta = cls._parse_spec_candidate(parsed_repo, ref, candidate["path"])
+        import asyncio
+        async def parse(candidate):
+            spec_raw, candidate_meta = await cls._parse_spec_candidate(parsed_repo, ref, candidate["path"])
             candidate_meta["candidate_score"] = candidate["score"]
-            parsed_candidates.append((spec_raw, candidate_meta, candidate["score"]))
+            return (spec_raw, candidate_meta, candidate["score"])
+        
+        parsed_candidates = await asyncio.gather(*(parse(c) for c in candidates))
 
-        source_files = cls._fetch_source_files(parsed_repo, ref, tree_entries)
-        code_analysis = RepoCodeApiExtractor.analyze_repo_sources(source_files)
+        valid_candidates = [item for item in parsed_candidates if item[0] is not None and item[1].get("total_operations", 0) > 0]
+        
+        # If we already have a valid OpenAPI spec, skip the heavy code analysis
+        if valid_candidates:
+            source_files = {}
+            code_analysis = RepoCodeApiExtractor.analyze_repo_sources(source_files)
+        else:
+            source_files = await cls._fetch_source_files(parsed_repo, ref, tree_entries)
+            code_analysis = RepoCodeApiExtractor.analyze_repo_sources(source_files)
 
         selected_source_kind = "openapi"
         selected_spec_raw: Dict[str, Any]
         selected_spec: Dict[str, Any]
-        if any(item[0] is not None for item in parsed_candidates):
+        
+        if valid_candidates:
+            selected_spec_raw, selected_spec = cls._rank_selected_spec(valid_candidates)
+        elif any(item[0] is not None for item in parsed_candidates) and code_analysis["summary"]["route_count"] == 0:
+            # Fallback to an empty spec if we found files but no code routes
             selected_spec_raw, selected_spec = cls._rank_selected_spec(parsed_candidates)
         elif code_analysis["summary"]["route_count"] > 0:
             selected_spec_raw = RepoCodeApiExtractor.synthesize_openapi_spec(

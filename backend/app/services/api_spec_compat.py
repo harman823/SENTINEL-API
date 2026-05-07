@@ -55,8 +55,23 @@ class ApiSpecCompat:
         if kind in ("openapi-like", "raml"):
             converted = deepcopy(spec)
             converted.setdefault("openapi", "3.0.0")
+            if not isinstance(converted.get("info"), dict):
+                converted["info"] = {"title": "Synthesized API", "version": "unknown"}
+            if not isinstance(converted.get("paths"), dict):
+                converted["paths"] = {}
             return converted
-        raise ValueError(cls.unsupported_message(spec))
+
+        converted = deepcopy(spec) if isinstance(spec, dict) else {}
+        converted.setdefault("openapi", "3.0.0")
+        if not isinstance(converted.get("info"), dict):
+            converted["info"] = {
+                "title": "Synthesized API",
+                "version": "unknown",
+                "description": "Auto-generated from unrecognized format",
+            }
+        if not isinstance(converted.get("paths"), dict):
+            converted["paths"] = {}
+        return converted
 
     @classmethod
     def unsupported_message(cls, spec: Dict[str, Any]) -> str:

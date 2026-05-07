@@ -347,7 +347,7 @@ async def github_run(request: GitHubRunRequest):
     from backend.app.services.github_repo_analyzer import GitHubRepoAnalyzer
 
     try:
-        inspection = GitHubRepoAnalyzer.inspect_repo(request.url, selected_path=request.selected_path)
+        inspection = await GitHubRepoAnalyzer.inspect_repo(request.url, selected_path=request.selected_path)
         spec_raw = inspection["selected_spec_raw"]
         response = await run_pipeline(
             RunPipelineRequest(spec_raw=spec_raw, approve=request.approve, live=request.live)
@@ -364,7 +364,7 @@ async def github_inspect(request: GitHubInspectRequest):
     from backend.app.services.github_repo_analyzer import GitHubRepoAnalyzer
 
     try:
-        inspection = GitHubRepoAnalyzer.inspect_repo(request.url, selected_path=request.selected_path)
+        inspection = await GitHubRepoAnalyzer.inspect_repo(request.url, selected_path=request.selected_path)
         repo_inspection = inspection["repo_inspection"]
         return GitHubInspectResponse(
             success=True,

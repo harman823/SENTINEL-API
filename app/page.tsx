@@ -23,6 +23,8 @@ import {
 } from "lucide-react";
 
 const NAV_LINKS = [
+  { label: "GitHub", href: "https://github.com/harman823/SENTINEL-API", external: true },
+  { label: "Vercel", href: "https://sentinel-api-tau.vercel.app", external: true },
   { label: "About", href: "#about" },
   { label: "Features", href: "#features" },
   { label: "Contact", href: "#contact" },
@@ -108,7 +110,12 @@ export default function LandingPage() {
               <a
                 key={l.href}
                 href={l.href}
-                onClick={(e) => { if (scrollLocked) { e.preventDefault(); handleLearnMore(); } }}
+                onClick={(e) => { 
+                  if (l.external) return; 
+                  if (scrollLocked) { e.preventDefault(); handleLearnMore(); } 
+                }}
+                target={l.external ? "_blank" : undefined}
+                rel={l.external ? "noopener noreferrer" : undefined}
                 className="text-sm text-zinc-300 hover:text-emerald-400 transition-colors"
               >
                 {l.label}
@@ -315,6 +322,12 @@ export default function LandingPage() {
             reserved.
           </span>
           <div className="flex gap-6">
+            <a href="https://github.com/harman823/SENTINEL-API" target="_blank" rel="noopener noreferrer" className="hover:text-zinc-300 transition-colors">
+              GitHub
+            </a>
+            <a href="https://sentinel-api-tau.vercel.app" target="_blank" rel="noopener noreferrer" className="hover:text-zinc-300 transition-colors">
+              Vercel
+            </a>
             <a href="#about" className="hover:text-zinc-300 transition-colors">
               About
             </a>
