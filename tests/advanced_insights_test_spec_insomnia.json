@@ -1,0 +1,84 @@
+{
+  "_type": "export",
+  "__export_format": 4,
+  "__export_date": "2024-01-01T00:00:00.000Z",
+  "__export_source": "insomnia.desktop.app:v2024.1.0",
+  "resources": [
+    {
+      "_id": "wrk_sentinel_test",
+      "_type": "workspace",
+      "name": "SENTINEL Error Test — Insomnia",
+      "description": "Intentionally broken: no auth, PII exposure, destructive operations"
+    },
+    {
+      "_id": "req_bulk_delete",
+      "_type": "request",
+      "parentId": "wrk_sentinel_test",
+      "name": "Bulk Delete All Users (no auth)",
+      "method": "DELETE",
+      "url": "{{ _.base_url }}/admin/users",
+      "body": {}
+    },
+    {
+      "_id": "req_create_admin",
+      "_type": "request",
+      "parentId": "wrk_sentinel_test",
+      "name": "Create Admin — Exposes Password in Body",
+      "method": "POST",
+      "url": "{{ _.base_url }}/admin/users",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\"username\": \"admin\", \"password\": \"password123\", \"role\": \"root\"}"
+      },
+      "headers": [{ "name": "Content-Type", "value": "application/json" }]
+    },
+    {
+      "_id": "req_issue_token",
+      "_type": "request",
+      "parentId": "wrk_sentinel_test",
+      "name": "Issue Auth Token — Plaintext Credentials",
+      "method": "POST",
+      "url": "{{ _.base_url }}/auth/token",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\"email\": \"admin@example.com\", \"password\": \"password123\", \"api_key\": \"raw-key\", \"secret\": \"exposed\"}"
+      },
+      "headers": [{ "name": "Content-Type", "value": "application/json" }]
+    },
+    {
+      "_id": "req_update_config",
+      "_type": "request",
+      "parentId": "wrk_sentinel_test",
+      "name": "Update System Config — Exposes DB Credentials",
+      "method": "PUT",
+      "url": "{{ _.base_url }}/internal/config",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\"debug_mode\": true, \"db_connection_string\": \"postgres://prod:secret@db/prod\", \"private_key\": \"-----BEGIN RSA PRIVATE KEY-----\"}"
+      },
+      "headers": [{ "name": "Content-Type", "value": "application/json" }]
+    },
+    {
+      "_id": "req_patch_pii",
+      "_type": "request",
+      "parentId": "wrk_sentinel_test",
+      "name": "Patch User PII — SSN, Credit Card, DOB",
+      "method": "PATCH",
+      "url": "{{ _.base_url }}/users/1/settings",
+      "body": {
+        "mimeType": "application/json",
+        "text": "{\"ssn\": \"123-45-6789\", \"credit_card\": \"4111-1111-1111-1111\", \"date_of_birth\": \"1990-01-01\"}"
+      },
+      "headers": [{ "name": "Content-Type", "value": "application/json" }]
+    },
+    {
+      "_id": "req_export_data",
+      "_type": "request",
+      "parentId": "wrk_sentinel_test",
+      "name": "Export All User Data — PII in Response",
+      "method": "GET",
+      "url": "{{ _.base_url }}/data/export",
+      "body": {}
+    }
+  ]
+}

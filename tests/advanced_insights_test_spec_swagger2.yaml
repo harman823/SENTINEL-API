@@ -1,0 +1,135 @@
+swagger: "2.0"
+info:
+  title: SENTINEL Error Test - Swagger 2.0
+  description: Broken Swagger spec for testing risk detection
+  version: "1.0.0"
+host: api.example.com
+basePath: /v1
+schemes:
+  - http  # Intentional: no HTTPS
+
+paths:
+  /admin/users:
+    delete:
+      operationId: bulkDeleteUsers
+      summary: Bulk delete all users (no auth)
+      responses:
+        "204":
+          description: Deleted
+    post:
+      operationId: createAdminUser
+      summary: Create admin account
+      parameters:
+        - in: body
+          name: body
+          schema:
+            type: object
+            required: [username, password, role]
+            properties:
+              username:
+                type: string
+              password:
+                type: string
+              role:
+                type: string
+                enum: [admin, superuser, root]
+      responses:
+        "201":
+          description: Created
+
+  /auth/token:
+    post:
+      operationId: issueAuthToken
+      summary: Issue auth token
+      parameters:
+        - in: body
+          name: body
+          schema:
+            type: object
+            required: [email, password]
+            properties:
+              email:
+                type: string
+                format: email
+              password:
+                type: string
+              api_key:
+                type: string
+              secret:
+                type: string
+      responses:
+        "200":
+          description: Token issued
+
+  /internal/config:
+    put:
+      operationId: updateSystemConfig
+      summary: Update system config
+      parameters:
+        - in: body
+          name: body
+          schema:
+            type: object
+            properties:
+              debug_mode:
+                type: boolean
+              db_connection_string:
+                type: string
+              private_key:
+                type: string
+              credentials:
+                type: object
+      responses:
+        "200":
+          description: Updated
+
+  /users/{id}/settings:
+    patch:
+      operationId: updateUserSettings
+      parameters:
+        - in: path
+          name: id
+          required: true
+          type: string
+        - in: body
+          name: body
+          schema:
+            type: object
+            properties:
+              email:
+                type: string
+                format: email
+              ssn:
+                type: string
+              credit_card:
+                type: string
+              date_of_birth:
+                type: string
+                format: date
+      responses:
+        "200":
+          description: Updated
+
+  /data/export:
+    get:
+      operationId: exportAllData
+      summary: Export all user data with PII
+      responses:
+        "200":
+          description: All data
+          schema:
+            type: object
+            properties:
+              users:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id:
+                      type: integer
+                    email:
+                      type: string
+                    ssn:
+                      type: string
+                    credit_card:
+                      type: string

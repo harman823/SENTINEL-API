@@ -1,0 +1,118 @@
+{
+  "info": {
+    "name": "SENTINEL Error Test — Postman Collection",
+    "_postman_id": "sentinel-test-001",
+    "description": "Intentionally broken Postman collection: unsecured admin/auth/PII endpoints",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Admin",
+      "item": [
+        {
+          "name": "Bulk Delete Users (DANGEROUS - no auth)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/admin/users",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "users"]
+            }
+          }
+        },
+        {
+          "name": "Create Admin Account (no auth, exposes password)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"username\": \"admin\", \"password\": \"password123\", \"role\": \"superuser\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/admin/users",
+              "host": ["{{base_url}}"],
+              "path": ["admin", "users"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Issue Token (plaintext credentials)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\": \"admin@example.com\", \"password\": \"password123\", \"api_key\": \"raw-secret-key\", \"secret\": \"exposed-secret\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/token",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "token"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Internal Config",
+      "item": [
+        {
+          "name": "Update System Config (exposes DB credentials)",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"debug_mode\": true, \"db_connection_string\": \"postgres://user:pass@db:5432/prod\", \"private_key\": \"-----BEGIN RSA PRIVATE KEY-----\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/internal/config",
+              "host": ["{{base_url}}"],
+              "path": ["internal", "config"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "Update User PII Settings",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\"email\": \"user@example.com\", \"ssn\": \"123-45-6789\", \"credit_card\": \"4111-1111-1111-1111\", \"date_of_birth\": \"1990-01-01\"}"
+            },
+            "url": {
+              "raw": "{{base_url}}/users/1/settings",
+              "host": ["{{base_url}}"],
+              "path": ["users", "1", "settings"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Data Export (exposes PII in response)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/data/export",
+          "host": ["{{base_url}}"],
+          "path": ["data", "export"]
+        }
+      }
+    }
+  ]
+}
