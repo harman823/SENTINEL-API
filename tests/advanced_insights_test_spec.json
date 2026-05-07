@@ -1,185 +1,172 @@
 {
   "openapi": "3.0.0",
   "info": {
-    "title": "Advanced Insights Error Testing Spec",
-    "description": "An intentionally broken OpenAPI specification designed to trigger all 12 Advanced Insights error modules in SENTINEL.",
-    "version": "1.0.0"
+    "title": "SENTINEL Error Test Spec",
+    "version": "0.1-broken"
   },
   "paths": {
-    "/users": {
-      "get": {
-        "summary": "Get all users",
-        "operationId": "getUsers",
+    "/admin/users": {
+      "delete": {
+        "summary": "Bulk delete all users",
+        "operationId": "bulkDeleteUsers",
         "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/User"
-                  }
-                }
-              }
-            }
+          "204": {
+            "description": "All users deleted"
           }
         }
       },
       "post": {
-        "summary": "Create a user",
-        "operationId": "createUser",
+        "operationId": "createAdminUser",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/User"
+                "type": "object",
+                "properties": {
+                  "username": { "type": "string", "example": "admin" },
+                  "password": { "type": "string", "example": "password123" },
+                  "role": { "type": "string", "enum": ["admin", "superuser", "root"] }
+                },
+                "required": ["username", "password", "role"]
               }
             }
           }
         },
         "responses": {
           "201": {
-            "description": "Created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/User"
-                }
-              }
-            }
+            "description": "Admin created"
           }
         }
       }
     },
-    "/users/{id}": {
-      "parameters": [
-        {
-          "name": "id",
-          "in": "path",
-          "required": true,
-          "schema": {
-            "type": "integer"
-          }
-        }
-      ],
-      "get": {
-        "summary": "Get a user by ID",
-        "operationId": "getUserById",
-        "responses": {
-          "200": {
-            "description": "Success",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/User"
-                }
-              }
-            }
-          }
-        }
-      },
-      "put": {
-        "summary": "Update a user",
-        "operationId": "updateUser",
+    "/auth/token": {
+      "post": {
+        "operationId": "issueAuthToken",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/User"
+                "type": "object",
+                "properties": {
+                  "email": { "type": "string", "format": "email" },
+                  "password": { "type": "string" },
+                  "api_key": { "type": "string" },
+                  "secret": { "type": "string" }
+                },
+                "required": ["email", "password"]
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "Updated"
+            "description": "Token issued"
           }
         }
-      },
-      "delete": {
-        "summary": "Delete a user",
-        "operationId": "deleteUser",
+      }
+    },
+    "/internal/config": {
+      "put": {
+        "operationId": "updateSystemConfig",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "debug_mode": { "type": "boolean" },
+                  "db_connection_string": { "type": "string" },
+                  "private_key": { "type": "string" },
+                  "credentials": { "type": "object" }
+                }
+              }
+            }
+          }
+        },
         "responses": {
-          "204": {
-            "description": "Deleted"
+          "200": {
+            "description": "Config updated"
+          }
+        }
+      }
+    },
+    "/users/{id}/settings": {
+      "patch": {
+        "operationId": "updateUserSettings",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": { "type": "string", "format": "email" },
+                  "phone": { "type": "string" },
+                  "ssn": { "type": "string" },
+                  "credit_card": { "type": "string" },
+                  "date_of_birth": { "type": "string", "format": "date" },
+                  "address": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Settings updated"
           }
         }
       }
     },
     "/health": {
       "get": {
-        "summary": "System Health",
         "operationId": "getHealth",
+        "summary": "Health check",
         "responses": {
-          "200": {
-            "description": "System is healthy"
-          }
+          "200": { "description": "OK" }
         }
       }
     },
-    "/legacy-auth": {
-      "post": {
-        "summary": "Legacy Authentication",
-        "operationId": "legacyAuth",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/x-www-form-urlencoded": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "username": {
-                    "type": "string"
-                  },
-                  "password": {
-                    "type": "string"
+    "/data/export": {
+      "get": {
+        "operationId": "exportAllData",
+        "summary": "Export all user data",
+        "responses": {
+          "200": {
+            "description": "Data export",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "users": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": { "type": "integer" },
+                          "name": { "type": "string" },
+                          "email": { "type": "string" },
+                          "ssn": { "type": "string" },
+                          "credit_card": { "type": "string" }
+                        }
+                      }
+                    }
                   }
                 }
               }
             }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Token"
-          }
-        }
-      }
-    }
-  },
-  "components": {
-    "schemas": {
-      "User": {
-        "type": "object",
-        "required": [
-          "name",
-          "email",
-          "role"
-        ],
-        "properties": {
-          "id": {
-            "type": "integer",
-            "readOnly": true
-          },
-          "name": {
-            "type": "string",
-            "example": "John Doe"
-          },
-          "email": {
-            "type": "string",
-            "format": "email",
-            "example": "invalid-email-format"
-          },
-          "role": {
-            "type": "string",
-            "enum": [
-              "admin",
-              "user",
-              "guest"
-            ]
           }
         }
       }

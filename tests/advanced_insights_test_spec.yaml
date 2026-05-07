@@ -1,121 +1,160 @@
 openapi: 3.0.0
 info:
-  title: Advanced Insights Error Testing Spec
-  description: An intentionally broken OpenAPI specification designed to trigger all
-    12 Advanced Insights error modules in SENTINEL.
-  version: 1.0.0
+  title: SENTINEL Error Test Spec
+  version: 0.1-broken
+
 paths:
-  /users:
-    get:
-      summary: Get all users
-      operationId: getUsers
-      responses:
-        '200':
-          description: Success
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/User'
-    post:
-      summary: Create a user
-      operationId: createUser
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/User'
-      responses:
-        '201':
-          description: Created
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/User'
-  /users/{id}:
-    parameters:
-    - name: id
-      in: path
-      required: true
-      schema:
-        type: integer
-    get:
-      summary: Get a user by ID
-      operationId: getUserById
-      responses:
-        '200':
-          description: Success
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/User'
-    put:
-      summary: Update a user
-      operationId: updateUser
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/User'
-      responses:
-        '200':
-          description: Updated
+  /admin/users:
     delete:
-      summary: Delete a user
-      operationId: deleteUser
+      summary: Bulk delete all users
+      operationId: bulkDeleteUsers
       responses:
-        '204':
-          description: Deleted
-  /health:
-    get:
-      summary: System Health
-      operationId: getHealth
-      responses:
-        '200':
-          description: System is healthy
-  /legacy-auth:
+        "204":
+          description: All users deleted
+
     post:
-      summary: Legacy Authentication
-      operationId: legacyAuth
+      operationId: createAdminUser
       requestBody:
         required: true
         content:
-          application/x-www-form-urlencoded:
+          application/json:
             schema:
               type: object
+              required:
+                - username
+                - password
+                - role
               properties:
                 username:
                   type: string
+                  example: admin
                 password:
                   type: string
+                  example: password123
+                role:
+                  type: string
+                  enum:
+                    - admin
+                    - superuser
+                    - root
       responses:
-        '200':
-          description: Token
-components:
-  schemas:
-    User:
-      type: object
-      required:
-      - name
-      - email
-      - role
-      properties:
-        id:
-          type: integer
-          readOnly: true
-        name:
-          type: string
-          example: John Doe
-        email:
-          type: string
-          format: email
-          example: invalid-email-format
-        role:
-          type: string
-          enum:
-          - admin
-          - user
-          - guest
+        "201":
+          description: Admin created
+
+  /auth/token:
+    post:
+      operationId: issueAuthToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                api_key:
+                  type: string
+                secret:
+                  type: string
+      responses:
+        "200":
+          description: Token issued
+
+  /internal/config:
+    put:
+      operationId: updateSystemConfig
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                debug_mode:
+                  type: boolean
+                db_connection_string:
+                  type: string
+                private_key:
+                  type: string
+                credentials:
+                  type: object
+      responses:
+        "200":
+          description: Config updated
+
+  /users/{id}/settings:
+    patch:
+      operationId: updateUserSettings
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  format: email
+                phone:
+                  type: string
+                ssn:
+                  type: string
+                credit_card:
+                  type: string
+                date_of_birth:
+                  type: string
+                  format: date
+                address:
+                  type: string
+      responses:
+        "200":
+          description: Settings updated
+
+  /health:
+    get:
+      operationId: getHealth
+      summary: Health check
+      responses:
+        "200":
+          description: OK
+
+  /data/export:
+    get:
+      operationId: exportAllData
+      summary: Export all user data
+      responses:
+        "200":
+          description: Data export
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  users:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id:
+                          type: integer
+                        name:
+                          type: string
+                        email:
+                          type: string
+                        ssn:
+                          type: string
+                        credit_card:
+                          type: string
