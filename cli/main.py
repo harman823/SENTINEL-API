@@ -9,6 +9,11 @@ import os
 import json
 import yaml
 
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 # Add project root to path to allow imports from backend
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
@@ -25,6 +30,16 @@ console = Console()
 
 SEVERITY_COLORS = {"error": "red", "warning": "yellow", "info": "cyan"}
 RISK_COLORS = {"high": "red", "medium": "yellow", "low": "green"}
+
+
+def _as_dict(value):
+    if isinstance(value, dict):
+        return value
+    if hasattr(value, "model_dump"):
+        return value.model_dump()
+    if hasattr(value, "dict"):
+        return value.dict()
+    return {}
 
 
 def _build_initial_state(spec_raw, approve=False, env="dev", policy_config=None):
@@ -118,7 +133,8 @@ def lint(
         table.add_column("Path", style="dim", width=18)
         table.add_column("Message")
 
-        for issue in issues:
+        for raw_issue in issues:
+            issue = _as_dict(raw_issue)
             sev = issue.get("severity", "info")
             color = SEVERITY_COLORS.get(sev, "white")
             table.add_row(
@@ -129,8 +145,9 @@ def lint(
             )
 
         console.print(table)
-        errors = sum(1 for i in issues if i.get("severity") == "error")
-        warns = sum(1 for i in issues if i.get("severity") == "warning")
+        issue_dicts = [_as_dict(i) for i in issues]
+        errors = sum(1 for i in issue_dicts if i.get("severity") == "error")
+        warns = sum(1 for i in issue_dicts if i.get("severity") == "warning")
         console.print(f"\n  Total: {len(issues)} issues ({errors} errors, {warns} warnings)")
 
     except Exception as e:

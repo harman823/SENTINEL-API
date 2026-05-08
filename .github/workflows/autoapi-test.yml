@@ -30,11 +30,11 @@ jobs:
 
       - name: Lint OpenAPI Spec
         run: |
-          python -m cli.main lint openapi.yaml
+          python -m cli.main lint examples/petstore.yaml
 
       - name: Run full pipeline (dry-run)
         run: |
-          python -m cli.main run-graph openapi.yaml --approve --ci --output autoapi-report.json
+          python -m cli.main run-graph examples/petstore.yaml --approve --ci --output autoapi-report.json
 
       - name: Generate JUnit report
         if: always()
