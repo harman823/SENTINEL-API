@@ -5,6 +5,11 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+  checks: write
+  pull-requests: read
+
 jobs:
   api-test:
     runs-on: ubuntu-latest
@@ -54,8 +59,16 @@ jobs:
             junit-results.xml
 
       - name: Publish JUnit results
-        if: always()
-        uses: mikepenz/action-junit-report@v4
+        if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
+        uses: mikepenz/action-junit-report@v5
         with:
           report_paths: junit-results.xml
           check_name: AutoAPI Test Results
+
+      - name: Publish JUnit annotations for forked PRs
+        if: ${{ always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+        uses: mikepenz/action-junit-report@v5
+        with:
+          report_paths: junit-results.xml
+          check_name: AutoAPI Test Results
+          annotate_only: true
