@@ -27,7 +27,7 @@ function topHighRiskOperations(report: Report, apiManifest?: ApiManifest | null)
     return fromReport.slice(0, 8);
   }
   return (apiManifest?.api_catalog.operations ?? [])
-    .filter((item) => item.risk_score >= 0.6)
+    .filter((item) => item.risk_score >= 0.5)
     .slice(0, 8);
 }
 

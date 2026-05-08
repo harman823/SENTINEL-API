@@ -394,6 +394,10 @@ export default function DropPage() {
   const readyCount = files.filter((file) => file.status === "ready").length;
   const repoOperations = apiManifest?.api_catalog.operations ?? [];
   const isCodeDerivedRepo = repoInspection?.selected_source_kind === "code";
+  const operationCount = Math.max(
+    apiManifest?.api_catalog.summary.total_operations ?? 0,
+    repoInspection?.code_route_count ?? 0,
+  );
   const openApiCandidates =
     repoInspection?.candidate_specs.filter(
       (candidate) =>
@@ -619,7 +623,7 @@ export default function DropPage() {
                           <div className="rounded-lg border border-zinc-800 bg-black/40 p-3">
                             <p className="text-xs text-zinc-500">Ops</p>
                             <p className="mt-2 text-lg font-semibold text-zinc-100">
-                              {apiManifest?.api_catalog.summary.total_operations ?? 0}
+                              {operationCount}
                             </p>
                           </div>
                           <div className="rounded-lg border border-zinc-800 bg-black/40 p-3">
@@ -635,7 +639,7 @@ export default function DropPage() {
                         </div>
                         <div className="mt-4 flex flex-wrap gap-2">
                           <Badge variant="outline" className="border-zinc-700 bg-zinc-900/70 text-zinc-300">
-                            Source {repoInspection.selected_source_kind === "code" ? "Code-Derived" : "OpenAPI"}
+                            Source {repoInspection.selected_source_kind === "code" ? "Code-Derived" : repoInspection.selected_source_kind === "hybrid" ? "Hybrid Docs + Code" : "API Docs + Code Scan"}
                           </Badge>
                           {repoInspection.detected_frameworks.map((item) => (
                             <Badge key={item.framework} variant="outline" className="border-amber-500/30 bg-amber-500/10 text-amber-200">
@@ -701,7 +705,11 @@ export default function DropPage() {
                                         : "border-red-500/30 text-red-300"
                                     }
                                   >
-                                    {candidate.parseable ? `${candidate.total_operations} ops` : "invalid"}
+                                    {candidate.parseable
+                                      ? candidate.total_operations > 0
+                                        ? `${candidate.total_operations} ops`
+                                        : "parsed"
+                                      : "invalid"}
                                   </Badge>
                                 </div>
                                 <p className="mt-2 text-xs text-zinc-500">

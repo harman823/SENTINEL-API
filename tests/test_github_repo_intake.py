@@ -1,4 +1,5 @@
 from pathlib import Path
+import asyncio
 
 import yaml
 
@@ -19,7 +20,7 @@ def test_github_repo_analyzer_builds_repo_manifest(monkeypatch):
     spec = _load_fixture()
     fixture_text = FIXTURE_PATH.read_text(encoding="utf-8")
 
-    def fake_fetch_json(url: str):
+    async def fake_fetch_json(url: str):
         if url.endswith("/repos/acme/security-demo"):
             return {
                 "name": "security-demo",
@@ -45,7 +46,7 @@ def test_github_repo_analyzer_builds_repo_manifest(monkeypatch):
             }
         raise AssertionError(f"Unexpected JSON URL: {url}")
 
-    def fake_fetch_text(url: str):
+    async def fake_fetch_text(url: str):
         if url.endswith("/api/openapi.yaml"):
             return fixture_text
         if url.endswith("/docs/reference.json"):
@@ -55,7 +56,7 @@ def test_github_repo_analyzer_builds_repo_manifest(monkeypatch):
     monkeypatch.setattr(GitHubRepoAnalyzer, "_fetch_json", staticmethod(fake_fetch_json))
     monkeypatch.setattr(GitHubRepoAnalyzer, "_fetch_text", staticmethod(fake_fetch_text))
 
-    inspection = GitHubRepoAnalyzer.inspect_repo("https://github.com/acme/security-demo")
+    inspection = asyncio.run(GitHubRepoAnalyzer.inspect_repo("https://github.com/acme/security-demo"))
 
     repo_inspection = inspection["repo_inspection"]
     api_manifest = inspection["api_manifest"]
@@ -63,11 +64,12 @@ def test_github_repo_analyzer_builds_repo_manifest(monkeypatch):
     assert repo_inspection["full_name"] == "acme/security-demo"
     assert repo_inspection["selected_spec"]["path"] == "api/openapi.yaml"
     assert repo_inspection["approval_required"] is True
-    assert [item["path"] for item in repo_inspection["candidate_specs"]] == ["api/openapi.yaml"]
+    assert [item["path"] for item in repo_inspection["candidate_specs"]] == ["api/openapi.yaml", "docs/reference.json"]
     assert api_manifest["api_catalog"]["summary"]["high_risk_operations"] >= 2
     assert api_manifest["api_catalog"]["operations"][0]["risk_score"] >= 0.6
     assert inspection["selected_spec_raw"]["info"]["title"] == spec["info"]["title"]
     assert repo_inspection["detected_frameworks"] == []
+    assert repo_inspection["scanned_source_files"] == 0
 
 
 def test_github_repo_analyzer_extracts_routes_from_framework_code(monkeypatch):
@@ -95,7 +97,7 @@ def rotate_secret(secret_id):
     return {"secret": secret_id}
 """
 
-    def fake_fetch_json(url: str):
+    async def fake_fetch_json(url: str):
         if url.endswith("/repos/acme/framework-demo"):
             return {
                 "name": "framework-demo",
@@ -120,7 +122,7 @@ def rotate_secret(secret_id):
             }
         raise AssertionError(f"Unexpected JSON URL: {url}")
 
-    def fake_fetch_text(url: str):
+    async def fake_fetch_text(url: str):
         if url.endswith("/backend/app.py"):
             return fastapi_source
         if url.endswith("/backend/admin.py"):
@@ -130,7 +132,7 @@ def rotate_secret(secret_id):
     monkeypatch.setattr(GitHubRepoAnalyzer, "_fetch_json", staticmethod(fake_fetch_json))
     monkeypatch.setattr(GitHubRepoAnalyzer, "_fetch_text", staticmethod(fake_fetch_text))
 
-    inspection = GitHubRepoAnalyzer.inspect_repo("https://github.com/acme/framework-demo")
+    inspection = asyncio.run(GitHubRepoAnalyzer.inspect_repo("https://github.com/acme/framework-demo"))
 
     repo_inspection = inspection["repo_inspection"]
     api_manifest = inspection["api_manifest"]
@@ -143,6 +145,72 @@ def rotate_secret(secret_id):
     assert api_manifest["api_catalog"]["code_analysis"]["summary"]["route_count"] == 3
     assert "/admin/system/users/{user_id}" in inspection["selected_spec_raw"]["paths"]
     assert inspection["selected_spec_raw"]["paths"]["/admin/system/users/{user_id}"]["delete"]["x-sentinel-source"]["type"] == "code"
+
+
+def test_github_repo_analyzer_scans_docs_and_code_when_spec_exists(monkeypatch):
+    openapi_doc = {
+        "openapi": "3.0.0",
+        "info": {"title": "Documented API", "version": "1.0"},
+        "paths": {
+            "/documented": {
+                "get": {"responses": {"200": {"description": "ok"}}}
+            }
+        },
+    }
+    fastapi_source = """
+from fastapi import FastAPI
+
+app = FastAPI()
+
+@app.delete("/admin/accounts/{account_id}")
+async def delete_account(account_id: str):
+    return {"deleted": account_id}
+"""
+
+    async def fake_fetch_json(url: str):
+        if url.endswith("/repos/acme/hybrid-demo"):
+            return {
+                "name": "hybrid-demo",
+                "full_name": "acme/hybrid-demo",
+                "html_url": "https://github.com/acme/hybrid-demo",
+                "description": "Repo with API docs and source routes",
+                "default_branch": "main",
+                "stargazers_count": 1,
+                "watchers_count": 1,
+                "forks_count": 0,
+                "visibility": "public",
+            }
+        if url.endswith("/languages"):
+            return {"Python": 1200, "YAML": 200}
+        if "git/trees/main" in url:
+            return {
+                "tree": [
+                    {"path": "openapi.yaml", "type": "blob", "size": 500},
+                    {"path": "backend/app.py", "type": "blob", "size": 300},
+                ]
+            }
+        raise AssertionError(f"Unexpected JSON URL: {url}")
+
+    async def fake_fetch_text(url: str):
+        if url.endswith("/openapi.yaml"):
+            return yaml.safe_dump(openapi_doc)
+        if url.endswith("/backend/app.py"):
+            return fastapi_source
+        raise AssertionError(f"Unexpected text URL: {url}")
+
+    monkeypatch.setattr(GitHubRepoAnalyzer, "_fetch_json", staticmethod(fake_fetch_json))
+    monkeypatch.setattr(GitHubRepoAnalyzer, "_fetch_text", staticmethod(fake_fetch_text))
+
+    inspection = asyncio.run(GitHubRepoAnalyzer.inspect_repo("https://github.com/acme/hybrid-demo"))
+
+    repo_inspection = inspection["repo_inspection"]
+    api_manifest = inspection["api_manifest"]
+
+    assert repo_inspection["selected_source_kind"] == "hybrid"
+    assert repo_inspection["code_route_count"] == 1
+    assert repo_inspection["candidate_specs"][0]["document_kind"] == "openapi"
+    assert api_manifest["api_catalog"]["code_analysis"]["summary"]["route_count"] == 1
+    assert api_manifest["api_catalog"]["summary"]["total_operations"] == 2
 
 
 def test_report_generator_surfaces_high_risk_operations_and_errors():

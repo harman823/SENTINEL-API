@@ -21,7 +21,7 @@ function resolveHighRisk(report: Report, apiManifest?: ApiManifest | null) {
   if (fromReport.length > 0) {
     return fromReport;
   }
-  return (apiManifest?.api_catalog.operations ?? []).filter((item) => item.risk_score >= 0.6);
+  return (apiManifest?.api_catalog.operations ?? []).filter((item) => item.risk_score >= 0.5);
 }
 
 export function HighRiskOperationsPanel({

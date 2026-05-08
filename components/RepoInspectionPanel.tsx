@@ -61,7 +61,11 @@ export function RepoInspectionPanel({
                 <p className="text-xs text-zinc-500">Selected Source</p>
                 <p className="mt-2 text-sm text-zinc-200">{repoInspection.selected_spec?.path ?? "n/a"}</p>
                 <p className="mt-1 text-xs uppercase tracking-[0.22em] text-zinc-500">
-                  {repoInspection.selected_source_kind === "code" ? "code-derived" : "openapi"}
+                  {repoInspection.selected_source_kind === "code"
+                    ? "code-derived"
+                    : repoInspection.selected_source_kind === "hybrid"
+                      ? "hybrid docs + code"
+                      : "api docs + code scan"}
                 </p>
               </div>
             </div>

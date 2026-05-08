@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import re
@@ -19,7 +20,21 @@ from backend.app.services.spec_validator import SpecValidator
 GITHUB_API_BASE = "https://api.github.com"
 RAW_GITHUB_BASE = "https://raw.githubusercontent.com"
 SPEC_EXTENSIONS = {".json", ".yaml", ".yml"}
-SPEC_HINTS = ("openapi", "swagger", "api", "spec", "contract")
+DOC_HINTS = (
+    "openapi",
+    "swagger",
+    "postman",
+    "insomnia",
+    "asyncapi",
+    "raml",
+    "api",
+    "apis",
+    "spec",
+    "contract",
+    "collection",
+    "reference",
+)
+DOC_PATH_HINTS = ("/docs/", "/doc/", "/api/", "/apis/", "/spec/", "/contracts/", "/collections/")
 SPEC_EXCLUDED_FILENAMES = {
     "package.json",
     "package-lock.json",
@@ -146,12 +161,14 @@ class GitHubRepoAnalyzer:
             score += 100
 
         tokens = set(token for token in re.split(r"[/._-]+", lower) if token)
-        for hint in SPEC_HINTS:
+        for hint in DOC_HINTS:
             if hint in tokens:
                 score += 20
+            elif hint in lower:
+                score += 6
         if lower.endswith(".yaml") or lower.endswith(".yml"):
             score += 8
-        if "/docs/" in lower or lower.startswith("docs/"):
+        if any(hint in f"/{lower}" for hint in DOC_PATH_HINTS):
             score += 4
         if lower.rsplit("/", 1)[-1] in SPEC_EXCLUDED_FILENAMES:
             score -= 40
@@ -200,6 +217,8 @@ class GitHubRepoAnalyzer:
             "version": None,
             "total_operations": 0,
             "openapi_version": None,
+            "document_kind": None,
+            "document_version": None,
             "errors": [],
         }
 
@@ -222,6 +241,8 @@ class GitHubRepoAnalyzer:
                     "version": normalized.info.get("version", "Unknown"),
                     "total_operations": len(normalized.operations),
                     "openapi_version": compatible_spec.get("openapi"),
+                    "document_kind": source_format.get("kind"),
+                    "document_version": source_format.get("version"),
                     "source_format": source_format.get("kind"),
                     "source_version": source_format.get("version"),
                 }
@@ -267,7 +288,7 @@ class GitHubRepoAnalyzer:
             level = score.level.value if score else "low"
             numeric_score = score.score if score else 0.0
             destructive_count += 1 if op.is_destructive else 0
-            high_risk_count += 1 if numeric_score >= 0.6 else 0
+            high_risk_count += 1 if numeric_score >= 0.5 else 0
             operations.append(
                 {
                     "operation_key": key,
@@ -303,6 +324,42 @@ class GitHubRepoAnalyzer:
             },
             "operations": operations,
         }
+
+    @classmethod
+    def _merge_code_routes_into_spec(
+        cls,
+        spec_raw: Dict[str, Any],
+        code_analysis: Dict[str, Any],
+        repo_name: str,
+        repo_description: Optional[str],
+    ) -> Tuple[Dict[str, Any], int]:
+        if code_analysis.get("summary", {}).get("route_count", 0) == 0:
+            return spec_raw, 0
+
+        merged = deepcopy(spec_raw)
+        merged.setdefault("paths", {})
+        code_spec = RepoCodeApiExtractor.synthesize_openapi_spec(
+            repo_name=repo_name,
+            repo_description=repo_description,
+            code_analysis=code_analysis,
+        )
+        added = 0
+        for path, path_item in code_spec.get("paths", {}).items():
+            if not isinstance(path_item, dict):
+                continue
+            target_path = merged["paths"].setdefault(path, {})
+            if not isinstance(target_path, dict):
+                continue
+            for method, operation in path_item.items():
+                if method in target_path:
+                    continue
+                target_path[method] = operation
+                added += 1
+
+        if added:
+            merged["x-sentinel-code-analysis"] = code_analysis
+            merged["x-sentinel-source-mode"] = "hybrid"
+        return merged, added
 
     @classmethod
     async def _fetch_source_files(
@@ -357,26 +414,44 @@ class GitHubRepoAnalyzer:
         
         parsed_candidates = await asyncio.gather(*(parse(c) for c in candidates))
 
-        valid_candidates = [item for item in parsed_candidates if item[0] is not None and item[1].get("total_operations", 0) > 0]
-        
-        # If we already have a valid OpenAPI spec, skip the heavy code analysis
-        if valid_candidates:
-            source_files = {}
-            code_analysis = RepoCodeApiExtractor.analyze_repo_sources(source_files)
-        else:
-            source_files = await cls._fetch_source_files(parsed_repo, ref, tree_entries)
-            code_analysis = RepoCodeApiExtractor.analyze_repo_sources(source_files)
+        valid_candidates = [
+            item
+            for item in parsed_candidates
+            if item[0] is not None and item[1].get("total_operations", 0) > 0
+        ]
+
+        source_files = await cls._fetch_source_files(parsed_repo, ref, tree_entries)
+        code_analysis = RepoCodeApiExtractor.analyze_repo_sources(source_files)
+        code_route_count = code_analysis["summary"]["route_count"]
 
         selected_source_kind = "openapi"
         selected_spec_raw: Dict[str, Any]
         selected_spec: Dict[str, Any]
         
-        if valid_candidates:
+        if valid_candidates and (
+            requested_path
+            or code_route_count == 0
+            or max(item[1].get("total_operations", 0) for item in valid_candidates) >= code_route_count
+        ):
             selected_spec_raw, selected_spec = cls._rank_selected_spec(valid_candidates)
-        elif any(item[0] is not None for item in parsed_candidates) and code_analysis["summary"]["route_count"] == 0:
+            selected_spec_raw, merged_code_routes = cls._merge_code_routes_into_spec(
+                selected_spec_raw,
+                code_analysis,
+                repo_meta.get("name", parsed_repo.repo),
+                repo_meta.get("description"),
+            )
+            if merged_code_routes:
+                selected_source_kind = "hybrid"
+                selected_spec = {
+                    **selected_spec,
+                    "source_kind": "hybrid",
+                    "total_operations": selected_spec.get("total_operations", 0) + merged_code_routes,
+                    "code_operations_added": merged_code_routes,
+                }
+        elif any(item[0] is not None for item in parsed_candidates) and code_route_count == 0:
             # Fallback to an empty spec if we found files but no code routes
             selected_spec_raw, selected_spec = cls._rank_selected_spec(parsed_candidates)
-        elif code_analysis["summary"]["route_count"] > 0:
+        elif code_route_count > 0:
             selected_spec_raw = RepoCodeApiExtractor.synthesize_openapi_spec(
                 repo_name=repo_meta.get("name", parsed_repo.repo),
                 repo_description=repo_meta.get("description"),
@@ -388,7 +463,7 @@ class GitHubRepoAnalyzer:
                 "parseable": True,
                 "title": selected_spec_raw.get("info", {}).get("title"),
                 "version": selected_spec_raw.get("info", {}).get("version"),
-                "total_operations": code_analysis["summary"]["route_count"],
+                "total_operations": code_route_count,
                 "openapi_version": selected_spec_raw.get("openapi"),
                 "errors": [],
                 "candidate_score": 0,
@@ -397,8 +472,9 @@ class GitHubRepoAnalyzer:
             selected_source_kind = "code"
         else:
             raise ValueError(
-                "No valid OpenAPI file or supported framework routes were found in this repository. "
-                "Sentinel currently extracts APIs from OpenAPI specs and common framework code such as FastAPI, Flask, Django, Express, Fastify, Koa, Hono, NestJS, Bottle, and Sanic."
+                "No API operations were found in supported documentation or framework routes. "
+                "Sentinel scans OpenAPI, Swagger, Postman, Insomnia, AsyncAPI, RAML-like documents, "
+                "and common framework code such as FastAPI, Flask, Django, Express, Fastify, Koa, Hono, NestJS, Bottle, and Sanic."
             )
 
         api_inventory = cls._build_api_inventory(selected_spec_raw)
@@ -436,6 +512,7 @@ class GitHubRepoAnalyzer:
             "selected_spec": selected_spec,
             "approval_required": approval_required,
             "approval_prompt": approval_prompt,
+            "scanned_source_files": len(source_files),
         }
 
         api_manifest = {

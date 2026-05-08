@@ -16,6 +16,143 @@ class ReportGenerator:
     """Compile all pipeline stage outputs into a single report object."""
 
     @staticmethod
+    def _build_fix_prompts(
+        spec_normalized: Any,
+        high_risk_operations: List[Dict[str, Any]],
+        lint_results: List[Dict[str, Any]],
+        validation_results: List[Dict[str, Any]],
+        execution_results: List[Dict[str, Any]],
+        rca_results: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        operations = getattr(spec_normalized, "operations", []) if spec_normalized else []
+        source_title = "Unknown API"
+        if spec_normalized and isinstance(getattr(spec_normalized, "info", None), dict):
+            source_title = spec_normalized.info.get("title", source_title)
+
+        failed_test_ids = {
+            item.get("test_id")
+            for item in validation_results
+            if item.get("test_id") and not item.get("passed")
+        }
+        execution_by_test = {
+            item.get("test_id"): item
+            for item in execution_results
+            if item.get("test_id")
+        }
+
+        prompts: List[Dict[str, Any]] = []
+        for index, item in enumerate(high_risk_operations[:5], start=1):
+            endpoint = f"{item.get('method') or 'API'} {item.get('path') or item.get('operation_key')}"
+            factors = ", ".join(
+                factor.get("name", "risk")
+                for factor in item.get("risk_factors", [])[:5]
+                if isinstance(factor, dict)
+            ) or "risk factors"
+            prompt = "\n".join(
+                [
+                    "You are working in my local IDE on this API repository.",
+                    f"API surface: {source_title}",
+                    f"Problem endpoint: {endpoint}",
+                    f"Risk score: {float(item.get('risk_score', 0.0)):.2f}",
+                    f"Risk factors: {factors}",
+                    "",
+                    "Task:",
+                    "1. Find the handler, route, schema, and tests for this endpoint.",
+                    "2. Add or tighten authentication/authorization where the route mutates or exposes sensitive data.",
+                    "3. Validate request and response schemas, including PII or credential fields.",
+                    "4. Add regression tests covering success, unauthorized, invalid payload, and documented error responses.",
+                    "5. Update API documentation so the contract matches the implementation.",
+                    "",
+                    "Return a concise patch summary and list the files changed.",
+                ]
+            )
+            prompts.append(
+                {
+                    "id": f"risk-{index}",
+                    "title": f"Fix high-risk endpoint {endpoint}",
+                    "category": "risk",
+                    "endpoint": endpoint,
+                    "prompt": prompt,
+                }
+            )
+
+        if lint_results:
+            top_lint = lint_results[:8]
+            prompt = "\n".join(
+                [
+                    "You are working in my local IDE on this API repository.",
+                    f"API surface: {source_title}",
+                    "Problem: Sentinel found API documentation quality issues.",
+                    "",
+                    "Top findings:",
+                    *[
+                        f"- {item.get('severity', 'issue')}: {item.get('message') or item.get('rule') or item}"
+                        for item in top_lint
+                    ],
+                    "",
+                    "Task: update the API documentation and related tests so every operation has security, documented 4xx/5xx responses, request/response schemas, and accurate operation metadata.",
+                ]
+            )
+            prompts.append(
+                {
+                    "id": "lint-contract",
+                    "title": "Fix API contract quality issues",
+                    "category": "contract",
+                    "endpoint": None,
+                    "prompt": prompt,
+                }
+            )
+
+        if failed_test_ids or rca_results:
+            failures = []
+            for test_id in sorted(failed_test_ids):
+                execution = execution_by_test.get(test_id, {})
+                failures.append(
+                    f"- {test_id}: status={execution.get('status_code', 'n/a')} error={execution.get('error') or 'n/a'}"
+                )
+            prompt = "\n".join(
+                [
+                    "You are working in my local IDE on this API repository.",
+                    f"API surface: {source_title}",
+                    "Problem: Sentinel found failing API validation or execution results.",
+                    "",
+                    "Failures:",
+                    *(failures[:10] or ["- See the Sentinel report RCA section for failure details."]),
+                    "",
+                    "Task: reproduce the failing API tests locally, fix the implementation or contract mismatch, add regression coverage, and keep the documented response codes aligned with real behavior.",
+                ]
+            )
+            prompts.append(
+                {
+                    "id": "failed-validations",
+                    "title": "Fix failing API validations",
+                    "category": "validation",
+                    "endpoint": None,
+                    "prompt": prompt,
+                }
+            )
+
+        if not prompts and operations:
+            prompt = "\n".join(
+                [
+                    "You are working in my local IDE on this API repository.",
+                    f"API surface: {source_title}",
+                    f"Sentinel scanned {len(operations)} operation(s) and did not find blockers.",
+                    "Task: add regression tests for the highest-value routes, verify authentication coverage, and keep API docs synchronized with handlers.",
+                ]
+            )
+            prompts.append(
+                {
+                    "id": "hardening-pass",
+                    "title": "Add API hardening coverage",
+                    "category": "hardening",
+                    "endpoint": None,
+                    "prompt": prompt,
+                }
+            )
+        return prompts
+
+    @staticmethod
     def generate(
         spec_normalized: Any,
         risk_scores: Dict[str, float],
@@ -66,9 +203,9 @@ class ReportGenerator:
         val_failed = len(validation_results) - val_passed
         flagged_ops = sum(1 for result in policy_results if result.get("requires_approval"))
 
-        high_risk = sum(1 for score in risk_scores.values() if score >= 0.7)
-        medium_risk = sum(1 for score in risk_scores.values() if 0.4 <= score < 0.7)
-        low_risk = sum(1 for score in risk_scores.values() if score < 0.4)
+        high_risk = sum(1 for score in risk_scores.values() if score >= 0.5)
+        medium_risk = sum(1 for score in risk_scores.values() if 0.2 <= score < 0.5)
+        low_risk = sum(1 for score in risk_scores.values() if score < 0.2)
 
         lint_errors = sum(1 for item in lint_results if item.get("severity") == "error")
         lint_warnings = sum(1 for item in lint_results if item.get("severity") == "warning")
@@ -134,7 +271,7 @@ class ReportGenerator:
             reverse=True,
         ):
             score = detail.get("score", 0)
-            if score < 0.6:
+            if score < 0.5:
                 continue
             op = operation_index.get(operation_key)
             policy = policy_index.get(operation_key, {})
@@ -153,6 +290,15 @@ class ReportGenerator:
                     "violated_rules": policy.get("violated_rules", []),
                 }
             )
+
+        fix_prompts = ReportGenerator._build_fix_prompts(
+            spec_normalized=spec_normalized,
+            high_risk_operations=high_risk_operations,
+            lint_results=lint_results,
+            validation_results=validation_results,
+            execution_results=execution_results,
+            rca_results=rca_results,
+        )
 
         report: Dict[str, Any] = {
             "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -254,6 +400,7 @@ class ReportGenerator:
             "iac_validation": iac_validation,
             "errors": errors,
             "error_details": [{"message": message, "severity": "error"} for message in errors],
+            "fix_prompts": fix_prompts,
         }
 
         report["safe_to_ship"] = SafeToShipGate.evaluate(report, environment=environment)

@@ -107,6 +107,13 @@ export interface Report {
   rca_summary?: { total_findings: number };
   compliance_scorecard?: { overall_compliance_health: number };
   breaking_change_summary?: { total_predictions: number; likely_breaking: number };
+  fix_prompts?: Array<{
+    id: string;
+    title: string;
+    category: string;
+    endpoint?: string | null;
+    prompt: string;
+  }>;
   errors: string[];
   error_details?: Array<{ message: string; severity: string }>;
 }
@@ -130,11 +137,14 @@ export interface RepoSpecCandidate {
   version?: string | null;
   total_operations: number;
   openapi_version?: string | null;
+  document_kind?: string | null;
+  document_version?: string | null;
   source_format?: string | null;
   source_version?: string | null;
   errors?: string[];
   candidate_score?: number;
-  source_kind?: "openapi" | "code";
+  source_kind?: "openapi" | "code" | "hybrid";
+  code_operations_added?: number;
 }
 
 export interface RepoFrameworkDetection {
@@ -161,7 +171,7 @@ export interface RepoInspection {
   total_files: number;
   detected_frameworks: RepoFrameworkDetection[];
   code_route_count: number;
-  selected_source_kind: "openapi" | "code";
+  selected_source_kind: "openapi" | "code" | "hybrid";
   candidate_specs: RepoSpecCandidate[];
   selected_spec?: RepoSpecCandidate;
   approval_required: boolean;
@@ -218,7 +228,7 @@ export interface ApiManifest {
     total_files: number;
   };
   api_catalog: {
-    source_kind: "openapi" | "code";
+    source_kind: "openapi" | "code" | "hybrid";
     selected_spec?: RepoSpecCandidate;
     candidate_specs: RepoSpecCandidate[];
     spec_info: {
