@@ -159,11 +159,20 @@ interface Report {
     rca_summary?: { total_findings: number };
     compliance_scorecard?: { overall_compliance_health: number };
     breaking_change_summary?: { total_predictions: number; likely_breaking: number };
+    fix_prompt?: {
+        id: string;
+        title: string;
+        category: string;
+        generated_by?: string;
+        issue_count?: number;
+        prompt: string;
+    };
     fix_prompts?: Array<{
         id: string;
         title: string;
         category: string;
-        endpoint?: string | null;
+        generated_by?: string;
+        issue_count?: number;
         prompt: string;
     }>;
     errors: string[];
@@ -544,7 +553,7 @@ export default function ResultsPage() {
     const complianceHealth = report.compliance_scorecard?.overall_compliance_health ?? 0;
     const breakingPredictions = report.breaking_change_summary?.total_predictions ?? 0;
     const likelyBreaking = report.breaking_change_summary?.likely_breaking ?? 0;
-    const fixPrompts = report.fix_prompts ?? [];
+    const fixPrompt = report.fix_prompt ?? report.fix_prompts?.[0] ?? null;
 
     const copyFixPrompt = async (id: string, prompt: string) => {
         await navigator.clipboard.writeText(prompt);
@@ -629,7 +638,7 @@ export default function ResultsPage() {
                     ? ("active" as const)
                     : totalRemediations > 0
                         ? ("partial" as const)
-                        : fixPrompts.length > 0
+                        : fixPrompt
                             ? ("active" as const)
                             : ("idle" as const),
             detail:
@@ -637,7 +646,9 @@ export default function ResultsPage() {
                     ? `${prSuggestions} remediation PR suggestion(s) prepared`
                     : totalRemediations > 0
                         ? `${totalRemediations} remediation(s) generated without PR payload`
-                        : `${fixPrompts.length} IDE-ready remediation prompt(s) generated`,
+                        : fixPrompt
+                            ? `1 LangGraph remediation prompt covering ${fixPrompt.issue_count ?? "all"} issue signal(s)`
+                            : "No remediation prompt generated",
         },
     ];
 
@@ -834,44 +845,51 @@ export default function ResultsPage() {
                     <HighRiskOperationsPanel report={report} apiManifest={apiManifest} />
                 </div>
 
-                {fixPrompts.length > 0 && (
+                {fixPrompt && (
                     <Card className="border-cyan-500/20 bg-zinc-900/60 backdrop-blur-md mb-8 animate-fadeIn">
                         <CardHeader>
                             <CardTitle className="flex items-center gap-2">
                                 <Copy className="size-5 text-cyan-400" />
-                                IDE Fix Prompts
+                                IDE Fix Prompt
                             </CardTitle>
                             <CardDescription className="text-zinc-500">
-                                Copy-ready prompts for fixing the exact risks, contract issues, or validation failures in a local IDE
+                                One LangGraph-generated prompt that explains every Sentinel finding and how to fix it in a local IDE
                             </CardDescription>
                         </CardHeader>
-                        <CardContent className="grid gap-4 lg:grid-cols-2">
-                            {fixPrompts.slice(0, 4).map((item) => (
-                                <div key={item.id} className="rounded-lg border border-zinc-800 bg-black/40 p-4">
-                                    <div className="mb-3 flex items-start justify-between gap-3">
-                                        <div className="min-w-0">
-                                            <Badge variant="outline" className="mb-2 border-cyan-500/30 bg-cyan-500/10 text-cyan-300">
-                                                {item.category}
+                        <CardContent>
+                            <div className="rounded-lg border border-zinc-800 bg-black/40 p-4">
+                                <div className="mb-3 flex items-start justify-between gap-3">
+                                    <div className="min-w-0">
+                                        <div className="mb-2 flex flex-wrap gap-2">
+                                            <Badge variant="outline" className="border-cyan-500/30 bg-cyan-500/10 text-cyan-300">
+                                                {fixPrompt.category}
                                             </Badge>
-                                            <p className="text-sm font-semibold text-zinc-100">{item.title}</p>
-                                            {item.endpoint && <p className="mt-1 truncate font-mono text-xs text-zinc-500">{item.endpoint}</p>}
+                                            {fixPrompt.generated_by && (
+                                                <Badge variant="outline" className="border-zinc-700 bg-zinc-900/70 text-zinc-300">
+                                                    {fixPrompt.generated_by}
+                                                </Badge>
+                                            )}
+                                            <Badge variant="outline" className="border-amber-500/30 bg-amber-500/10 text-amber-300">
+                                                {fixPrompt.issue_count ?? 0} signal(s)
+                                            </Badge>
                                         </div>
-                                        <Button
-                                            type="button"
-                                            size="sm"
-                                            variant="outline"
-                                            onClick={() => copyFixPrompt(item.id, item.prompt)}
-                                            className="shrink-0 border-zinc-700 text-zinc-300 hover:border-cyan-500/50 hover:text-white"
-                                        >
-                                            <Copy className="mr-2 size-3.5" />
-                                            {copiedPromptId === item.id ? "Copied" : "Copy"}
-                                        </Button>
+                                        <p className="text-sm font-semibold text-zinc-100">{fixPrompt.title}</p>
                                     </div>
-                                    <pre className="max-h-44 overflow-auto whitespace-pre-wrap rounded-md border border-zinc-800 bg-zinc-950/80 p-3 text-xs leading-relaxed text-zinc-400">
-                                        {item.prompt}
-                                    </pre>
+                                    <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => copyFixPrompt(fixPrompt.id, fixPrompt.prompt)}
+                                        className="shrink-0 border-zinc-700 text-zinc-300 hover:border-cyan-500/50 hover:text-white"
+                                    >
+                                        <Copy className="mr-2 size-3.5" />
+                                        {copiedPromptId === fixPrompt.id ? "Copied" : "Copy"}
+                                    </Button>
                                 </div>
-                            ))}
+                                <pre className="max-h-96 overflow-auto whitespace-pre-wrap rounded-md border border-zinc-800 bg-zinc-950/80 p-3 text-xs leading-relaxed text-zinc-400">
+                                    {fixPrompt.prompt}
+                                </pre>
+                            </div>
                         </CardContent>
                     </Card>
                 )}

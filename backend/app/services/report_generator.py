@@ -16,14 +16,18 @@ class ReportGenerator:
     """Compile all pipeline stage outputs into a single report object."""
 
     @staticmethod
-    def _build_fix_prompts(
+    def _build_fix_prompt(
         spec_normalized: Any,
         high_risk_operations: List[Dict[str, Any]],
         lint_results: List[Dict[str, Any]],
         validation_results: List[Dict[str, Any]],
         execution_results: List[Dict[str, Any]],
         rca_results: List[Dict[str, Any]],
-    ) -> List[Dict[str, Any]]:
+        drift_results: List[Dict[str, Any]],
+        remediation_results: List[Dict[str, Any]],
+        breaking_change_predictions: List[Dict[str, Any]],
+        errors: List[str],
+    ) -> Dict[str, Any]:
         operations = getattr(spec_normalized, "operations", []) if spec_normalized else []
         source_title = "Unknown API"
         if spec_normalized and isinstance(getattr(spec_normalized, "info", None), dict):
@@ -39,118 +43,173 @@ class ReportGenerator:
             for item in execution_results
             if item.get("test_id")
         }
+        issue_count = (
+            len(high_risk_operations)
+            + len(lint_results)
+            + len(failed_test_ids)
+            + len(rca_results)
+            + sum(len(item.get("drifts", [])) for item in drift_results)
+            + len(remediation_results)
+            + len(breaking_change_predictions)
+            + len(errors)
+        )
 
-        prompts: List[Dict[str, Any]] = []
-        for index, item in enumerate(high_risk_operations[:5], start=1):
-            endpoint = f"{item.get('method') or 'API'} {item.get('path') or item.get('operation_key')}"
-            factors = ", ".join(
-                factor.get("name", "risk")
-                for factor in item.get("risk_factors", [])[:5]
-                if isinstance(factor, dict)
-            ) or "risk factors"
-            prompt = "\n".join(
-                [
-                    "You are working in my local IDE on this API repository.",
-                    f"API surface: {source_title}",
-                    f"Problem endpoint: {endpoint}",
-                    f"Risk score: {float(item.get('risk_score', 0.0)):.2f}",
-                    f"Risk factors: {factors}",
-                    "",
-                    "Task:",
-                    "1. Find the handler, route, schema, and tests for this endpoint.",
-                    "2. Add or tighten authentication/authorization where the route mutates or exposes sensitive data.",
-                    "3. Validate request and response schemas, including PII or credential fields.",
-                    "4. Add regression tests covering success, unauthorized, invalid payload, and documented error responses.",
-                    "5. Update API documentation so the contract matches the implementation.",
-                    "",
-                    "Return a concise patch summary and list the files changed.",
+        lines = [
+            "You are working in my local IDE on this API repository.",
+            "Use this single Sentinel/LangGraph remediation prompt to fix every issue from the latest scan.",
+            "",
+            f"API surface: {source_title}",
+            f"Operations scanned: {len(operations)}",
+            f"Total issue signals: {issue_count}",
+            "",
+            "Goal:",
+            "Fix the API implementation, tests, and API documentation so Sentinel passes without hiding or suppressing real failures.",
+            "",
+            "Rules:",
+            "1. Do not fake results, silence tests, or remove routes to make the report green.",
+            "2. For every item below, locate the owning handler, route registration, schema/model, tests, and API docs.",
+            "3. Fix implementation bugs first when runtime behavior is wrong; fix the contract only when the implementation is intentionally correct.",
+            "4. Add or update regression tests for success, auth/authorization failure, invalid payload, and documented error responses.",
+            "5. Return a concise summary with files changed, tests run, and any risks that need human review.",
+            "",
+            "Specific findings and fixes:",
+        ]
+
+        if high_risk_operations:
+            lines.extend(["", "High-risk endpoints:"])
+            for item in high_risk_operations[:10]:
+                endpoint = f"{item.get('method') or 'API'} {item.get('path') or item.get('operation_key')}"
+                factors = [
+                    factor.get("name", "risk")
+                    for factor in item.get("risk_factors", [])[:6]
+                    if isinstance(factor, dict)
                 ]
-            )
-            prompts.append(
-                {
-                    "id": f"risk-{index}",
-                    "title": f"Fix high-risk endpoint {endpoint}",
-                    "category": "risk",
-                    "endpoint": endpoint,
-                    "prompt": prompt,
-                }
-            )
+                lines.extend(
+                    [
+                        f"- Error: `{endpoint}` has risk score {float(item.get('risk_score', 0.0)):.2f}"
+                        f" from {', '.join(factors) or 'risk factors'}.",
+                        "  Fix: enforce authn/authz, validate request and response schemas, protect PII/credential fields, document 4xx/5xx responses, and add endpoint-level regression tests.",
+                    ]
+                )
 
         if lint_results:
-            top_lint = lint_results[:8]
-            prompt = "\n".join(
-                [
-                    "You are working in my local IDE on this API repository.",
-                    f"API surface: {source_title}",
-                    "Problem: Sentinel found API documentation quality issues.",
-                    "",
-                    "Top findings:",
-                    *[
-                        f"- {item.get('severity', 'issue')}: {item.get('message') or item.get('rule') or item}"
-                        for item in top_lint
-                    ],
-                    "",
-                    "Task: update the API documentation and related tests so every operation has security, documented 4xx/5xx responses, request/response schemas, and accurate operation metadata.",
-                ]
-            )
-            prompts.append(
-                {
-                    "id": "lint-contract",
-                    "title": "Fix API contract quality issues",
-                    "category": "contract",
-                    "endpoint": None,
-                    "prompt": prompt,
-                }
-            )
+            lines.extend(["", "API documentation and contract issues:"])
+            for item in lint_results[:12]:
+                severity = item.get("severity", "issue")
+                rule = item.get("rule") or item.get("code") or "contract_issue"
+                location = item.get("path") or item.get("location") or item.get("operation") or "API document"
+                message = item.get("message") or str(item)
+                lines.extend(
+                    [
+                        f"- Error: `{rule}` at `{location}` ({severity}): {message}",
+                        "  Fix: update the OpenAPI/API document with explicit security, request/response schemas, operation metadata, and documented error responses matching the handler behavior.",
+                    ]
+                )
 
         if failed_test_ids or rca_results:
-            failures = []
-            for test_id in sorted(failed_test_ids):
+            lines.extend(["", "Failed validation or execution results:"])
+            for test_id in sorted(failed_test_ids)[:12]:
                 execution = execution_by_test.get(test_id, {})
-                failures.append(
-                    f"- {test_id}: status={execution.get('status_code', 'n/a')} error={execution.get('error') or 'n/a'}"
+                status = execution.get("status_code", "n/a")
+                error = execution.get("error") or "n/a"
+                lines.extend(
+                    [
+                        f"- Error: test `{test_id}` failed with status `{status}` and error `{error}`.",
+                        "  Fix: reproduce the test locally, correct the handler or contract mismatch, then add a regression test for the observed failure mode.",
+                    ]
                 )
-            prompt = "\n".join(
+            for item in rca_results[:8]:
+                category = item.get("category", "root_cause")
+                severity = item.get("severity", "unknown")
+                message = item.get("message") or item.get("summary") or str(item)
+                lines.extend(
+                    [
+                        f"- Error: RCA `{category}` ({severity}): {message}",
+                        "  Fix: address the root cause directly before changing generated tests or documentation.",
+                    ]
+                )
+
+        if drift_results:
+            lines.extend(["", "Runtime drift and contract mismatch:"])
+            for drift_report in drift_results[:8]:
+                endpoint = drift_report.get("endpoint", "unknown endpoint")
+                for drift in drift_report.get("drifts", [])[:5]:
+                    drift_type = drift.get("drift_type", "drift")
+                    field_path = drift.get("field_path", "response")
+                    expected = drift.get("expected", "documented behavior")
+                    actual = drift.get("actual", "runtime behavior")
+                    lines.extend(
+                        [
+                            f"- Error: `{endpoint}` has `{drift_type}` at `{field_path}`; expected `{expected}`, actual `{actual}`.",
+                            "  Fix: if runtime is correct, update the API schema/status documentation; if runtime is wrong, fix the handler and preserve the documented contract.",
+                        ]
+                    )
+
+        if remediation_results:
+            lines.extend(["", "Generated remediation hints:"])
+            for item in remediation_results[:8]:
+                endpoint = item.get("endpoint", "unknown endpoint")
+                status = item.get("status", "pending")
+                message = item.get("message") or item.get("patch_proposed") or "Review remediation patch."
+                lines.extend(
+                    [
+                        f"- Error: `{endpoint}` remediation status `{status}`: {message}",
+                        "  Fix: apply the deterministic patch when valid, otherwise implement the code hint and update tests/docs together.",
+                    ]
+                )
+
+        if breaking_change_predictions:
+            lines.extend(["", "Breaking-change predictions:"])
+            for item in breaking_change_predictions[:8]:
+                change_type = item.get("change_type", "breaking_change")
+                target = item.get("operation") or item.get("path") or item.get("endpoint") or "API surface"
+                message = item.get("message") or item.get("reason") or str(item)
+                lines.extend(
+                    [
+                        f"- Error: `{change_type}` on `{target}`: {message}",
+                        "  Fix: restore backward compatibility or bump/version the API intentionally and document the migration path.",
+                    ]
+                )
+
+        if errors:
+            lines.extend(["", "Pipeline errors:"])
+            for message in errors[:10]:
+                lines.extend(
+                    [
+                        f"- Error: {message}",
+                        "  Fix: trace this failure to the relevant pipeline step, handler, dependency, or contract input and add coverage so it does not regress.",
+                    ]
+                )
+
+        if issue_count == 0 and operations:
+            lines.extend(
                 [
-                    "You are working in my local IDE on this API repository.",
-                    f"API surface: {source_title}",
-                    "Problem: Sentinel found failing API validation or execution results.",
                     "",
-                    "Failures:",
-                    *(failures[:10] or ["- See the Sentinel report RCA section for failure details."]),
-                    "",
-                    "Task: reproduce the failing API tests locally, fix the implementation or contract mismatch, add regression coverage, and keep the documented response codes aligned with real behavior.",
+                    "No blocking errors were found.",
+                    "- Fix: add hardening coverage for the most important routes, verify auth coverage, and keep API docs synchronized with handlers.",
                 ]
-            )
-            prompts.append(
-                {
-                    "id": "failed-validations",
-                    "title": "Fix failing API validations",
-                    "category": "validation",
-                    "endpoint": None,
-                    "prompt": prompt,
-                }
             )
 
-        if not prompts and operations:
-            prompt = "\n".join(
-                [
-                    "You are working in my local IDE on this API repository.",
-                    f"API surface: {source_title}",
-                    f"Sentinel scanned {len(operations)} operation(s) and did not find blockers.",
-                    "Task: add regression tests for the highest-value routes, verify authentication coverage, and keep API docs synchronized with handlers.",
-                ]
-            )
-            prompts.append(
-                {
-                    "id": "hardening-pass",
-                    "title": "Add API hardening coverage",
-                    "category": "hardening",
-                    "endpoint": None,
-                    "prompt": prompt,
-                }
-            )
-        return prompts
+        lines.extend(
+            [
+                "",
+                "Expected output from the IDE agent:",
+                "- Patch the repository.",
+                "- List each Sentinel finding and the exact fix applied.",
+                "- List files changed.",
+                "- Run the relevant unit/API tests and build checks.",
+                "- Call out any finding that cannot be fixed without product/security input.",
+            ]
+        )
+
+        return {
+            "id": "sentinel-langgraph-remediation",
+            "title": "Fix all Sentinel scan findings",
+            "category": "all-findings",
+            "generated_by": "langgraph.generate_report",
+            "issue_count": issue_count,
+            "prompt": "\n".join(lines),
+        }
 
     @staticmethod
     def generate(
@@ -291,13 +350,17 @@ class ReportGenerator:
                 }
             )
 
-        fix_prompts = ReportGenerator._build_fix_prompts(
+        fix_prompt = ReportGenerator._build_fix_prompt(
             spec_normalized=spec_normalized,
             high_risk_operations=high_risk_operations,
             lint_results=lint_results,
             validation_results=validation_results,
             execution_results=execution_results,
             rca_results=rca_results,
+            drift_results=drift_results,
+            remediation_results=remediation_results,
+            breaking_change_predictions=breaking_change_predictions,
+            errors=errors,
         )
 
         report: Dict[str, Any] = {
@@ -400,7 +463,8 @@ class ReportGenerator:
             "iac_validation": iac_validation,
             "errors": errors,
             "error_details": [{"message": message, "severity": "error"} for message in errors],
-            "fix_prompts": fix_prompts,
+            "fix_prompt": fix_prompt,
+            "fix_prompts": [fix_prompt],
         }
 
         report["safe_to_ship"] = SafeToShipGate.evaluate(report, environment=environment)

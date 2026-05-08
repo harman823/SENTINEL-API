@@ -171,3 +171,6 @@ def test_failure_heavy_report_has_non_perfect_pass_rate_errors_and_multiple_high
     assert len(high_risk_operations) >= 3
     assert sum(1 for item in high_risk_operations if item["risk_score"] >= 0.6) >= 2
     assert report["risk_distribution"]["high"] >= 2
+    assert report["fix_prompt"]["id"] == "sentinel-langgraph-remediation"
+    assert report["fix_prompt"]["prompt"].count("Error:") >= 3
+    assert "Fix:" in report["fix_prompt"]["prompt"]

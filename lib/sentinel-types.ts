@@ -61,6 +61,15 @@ export interface HighRiskOperation {
   violated_rules?: string[];
 }
 
+export interface FixPrompt {
+  id: string;
+  title: string;
+  category: string;
+  generated_by?: string;
+  issue_count?: number;
+  prompt: string;
+}
+
 export interface Report {
   generated_at: string;
   spec_info: { title: string; version: string; total_operations: number };
@@ -107,13 +116,8 @@ export interface Report {
   rca_summary?: { total_findings: number };
   compliance_scorecard?: { overall_compliance_health: number };
   breaking_change_summary?: { total_predictions: number; likely_breaking: number };
-  fix_prompts?: Array<{
-    id: string;
-    title: string;
-    category: string;
-    endpoint?: string | null;
-    prompt: string;
-  }>;
+  fix_prompt?: FixPrompt;
+  fix_prompts?: FixPrompt[];
   errors: string[];
   error_details?: Array<{ message: string; severity: string }>;
 }

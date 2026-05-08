@@ -312,3 +312,8 @@ def test_report_generator_surfaces_high_risk_operations_and_errors():
     assert high_risk_operations[0]["risk_factors"]
     assert report["error_details"][0]["message"] == errors[0]
     assert report["summary"]["errors"] == len(errors)
+    assert report["fix_prompt"]["generated_by"] == "langgraph.generate_report"
+    assert report["fix_prompt"]["issue_count"] >= 4
+    assert len(report["fix_prompts"]) == 1
+    assert "Specific findings and fixes:" in report["fix_prompt"]["prompt"]
+    assert "Approval blocked live deletion" in report["fix_prompt"]["prompt"]
